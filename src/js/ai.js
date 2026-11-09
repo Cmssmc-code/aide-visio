@@ -12,9 +12,9 @@
 
   // Modèles (nov. 2026) : les plus rapides d'abord. La découverte (/models) remplace ces listes
   // par ce que la clé voit réellement ; ces listes ne servent qu'avant la 1re découverte.
-  const OPENAI_PREF = ['gpt-5.4-mini', 'gpt-5.6-luna', 'gpt-5.4-nano', 'gpt-5.5', 'gpt-5-mini', 'gpt-5-nano'];
+  const OPENAI_PREF = ['gpt-6-luna', 'gpt-5.4-mini', 'gpt-5.6-luna', 'gpt-5.4-nano', 'gpt-5.5', 'gpt-5-mini', 'gpt-5-nano'];
   const FALLBACK = {
-    openai: ['gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5.5'],
+    openai: ['gpt-6-luna', 'gpt-5.4-mini', 'gpt-5.4-nano'],
     gemini: ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-flash-latest', 'gemini-2.5-flash',
       'gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite'],
     claude: ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-haiku-4-5', 'claude-sonnet-4-5'],
@@ -765,7 +765,7 @@
     const text = (o.parts || []).filter(p => p && typeof p.text === 'string').map(p => p.text).concat(o.prompt ? [String(o.prompt)] : []).join('\n\n');
     messages.push({ role: 'user', content: text || '…' });
     const openai = provider === 'openai';
-    const gpt5 = openai && /^gpt-5/.test(model);
+    const gpt5 = openai && /^gpt-([5-9]|\d\d)/.test(model);
     const body = { model, messages };
     body[openai ? 'max_completion_tokens' : 'max_tokens'] = v.maxTokens || o.maxTokens || 1024;
     if (gpt5 && !v.noReasoning) body.reasoning_effort = /^gpt-5(-|$)/.test(model) ? 'minimal' : 'none';

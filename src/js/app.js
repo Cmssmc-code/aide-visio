@@ -399,6 +399,26 @@
     showUpdate(worker) { showUpdateBanner(worker || { postMessage() {} }); }
   });
 
+  // Lien d'installation des clés : #/cles?d=<base64url JSON>. Le fragment ne quitte jamais le PC ;
+  // les clés sont rangées comme si on les avait collées dans Réglages, puis le lien est effacé de l'adresse.
+  function absorbKeyLink() {
+    const m = /^#\/cles\?d=([A-Za-z0-9_-]+)/.exec(location.hash || '');
+    if (!m) return;
+    history.replaceState(null, '', location.pathname + location.search + '#/settings');
+    try {
+      const b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+      const bin = atob(b64 + '==='.slice((b64.length + 3) % 4));
+      const data = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0))));
+      const patch = { rememberKeys: true, provider: 'auto' };
+      ['geminiKey', 'openaiKey', 'groqKey', 'claudeKey'].forEach((k) => { if (typeof data[k] === 'string' && data[k].trim()) patch[k] = data[k].trim(); });
+      S.store.setSettings(patch);
+      toast('Clés IA installées.', 'ok');
+    } catch (e) {
+      console.error('[aidevisio] lien des clés', e);
+      toast('Lien des clés illisible : rien n’a été changé.', 'warn');
+    }
+  }
+
   async function route(force) {
     const target = parseHash();
     const hash = location.hash || '#/';
@@ -526,6 +546,7 @@
     }
     applyTheme();
     if (S.store.backend === 'memory') showStorageWarning();
+    absorbKeyLink();
     booted = true;
     window.addEventListener('hashchange', () => route(false));
     await route(true);

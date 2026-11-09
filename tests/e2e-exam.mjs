@@ -273,6 +273,17 @@ await test('accueil : deux choix, onglet Historique, sans date d’examen', asyn
   assert((await horizontalOverflow(page)) <= 0, 'pas de défilement horizontal');
 });
 
+await test('lien des clés : clés rangées, lien effacé de l’adresse', async () => {
+  const { ctx: kc, page: kp } = await makePage(DESK);
+  const d = Buffer.from(JSON.stringify({ geminiKey: 'AIza-test', groqKey: 'gsk_test', bad: 'x' })).toString('base64url');
+  await kp.goto(`${BASE}#/cles?d=${d}`);
+  await kp.waitForSelector('.st, .sc', { timeout: 10000 });
+  assert(/#\/settings$/.test(kp.url()), 'adresse nettoyée : ' + kp.url());
+  const keys = await kp.evaluate(() => JSON.parse(localStorage.getItem('aidevisio.keys') || '{}'));
+  assert(keys.geminiKey === 'AIza-test' && keys.groqKey === 'gsk_test' && !('bad' in keys), 'clés : ' + JSON.stringify(keys));
+  await kc.close();
+});
+
 await test('choix du sujet (jury) : filtre thème, aperçu, lancement', async () => {
   await open(page, '#/oral/new');
   await page.waitForSelector('.ex-chooser [data-subject]');
