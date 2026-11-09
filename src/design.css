@@ -813,3 +813,40 @@ small { font-size: 13px; }
   .ex-ftabs a:not(.on):hover, .seg > button:not(.on):hover, .ex-step:not(:disabled):not(.on):hover { background: var(--fill); color: var(--text); }
   .st-link:hover, .ex-more > summary:hover { text-decoration: underline; text-underline-offset: 3px; }
 }
+
+/* ---------- 19. Thème uni : aucun dégradé décoratif ---------- */
+
+:root, [data-theme="dark"] { --brand: var(--accent-fill); }
+.aurora, [data-theme="dark"] .aurora { display: none; }
+body { background: var(--bg); }
+
+.app-icon { background: var(--accent-fill); box-shadow: none; }
+.ex-role.is-primary,
+[data-theme="dark"] .ex-role.is-primary {
+  background: var(--accent-fill);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .1), 0 8px 20px -12px rgba(79, 70, 229, .5);
+}
+.ex-role-ic,
+.ex-role-solo .ex-role-ic,
+.ex-role-call .ex-role-ic,
+.ex-jury-ai .ex-role-ic,
+.ex-call-intro .ex-role-ic { box-shadow: none; }
+.ex-role:not(.is-primary) .ex-role-ic { background: var(--accent-soft); color: var(--accent-text, var(--accent)); }
+
+.ex-count, .ex-count[data-state="today"], .ex-count[data-state="now"] { background: var(--surface); box-shadow: var(--shadow-sm); }
+.ex-count-big { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--text); }
+.ex-draw-card { background: var(--surface); }
+.ex-jury-ai { background: var(--surface); border-color: var(--surface-stroke); }
+.ex-qbox { background: var(--fill); }
+.ex-fill { background: var(--accent-fill); }
+
+.dg-sum-ic,
+.dg-summary.is-warn .dg-sum-ic,
+.dg-summary.is-err .dg-sum-ic,
+.dg-summary.is-info .dg-sum-ic,
+.dg-summary.is-pending .dg-sum-ic { box-shadow: none; }
+.dg-sum-ic { background: var(--ok, #248a3d); }
+.dg-summary.is-warn .dg-sum-ic { background: #e07b00; }
+.dg-summary.is-err .dg-sum-ic { background: var(--err, #d70015); }
+.dg-summary.is-info .dg-sum-ic,
+.dg-summary.is-pending .dg-sum-ic { background: var(--accent-fill); }

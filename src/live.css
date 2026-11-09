@@ -36,9 +36,7 @@
   --lv-line: rgba(255, 255, 255, .07);
   display: flex; flex-direction: column; gap: 12px; min-height: 0;
   color: var(--text);
-  background:
-    radial-gradient(120% 90% at 50% -20%, rgba(99, 102, 241, .16) 0%, transparent 55%),
-    linear-gradient(180deg, #12141c 0%, #0b0c11 100%);
+  background: #0b0c11;
   border: 1px solid rgba(255, 255, 255, .07);
   box-shadow: 0 1px 2px rgba(0, 0, 0, .25), 0 18px 40px -24px rgba(10, 12, 30, .55);
   border-radius: var(--r-lg, 20px);
@@ -188,7 +186,7 @@
 .lv-stage:fullscreen {
   max-width: none; margin: 0; border: 0; border-radius: 0; box-shadow: none;
   padding: 3vh 6vw 3vh; gap: 2.2vh; overflow: hidden;
-  background: radial-gradient(90% 70% at 50% 0%, rgba(99, 102, 241, .14) 0%, transparent 60%), #08090d;
+  background: #08090d;
 }
 .lv-stage:fullscreen > * { width: 100%; max-width: 1280px; margin-inline: auto; }
 .lv-stage:fullscreen .lv-a { flex: 1 1 auto; overflow: hidden; }
@@ -209,7 +207,7 @@
 .lv-float { box-sizing: border-box; height: 100vh; padding: 0; }
 .ex-float .lv-stage.lv-fit {
   height: 100%; gap: 8px; border: 0; border-radius: 0; padding: 10px 16px 10px; box-shadow: none;
-  background: radial-gradient(110% 80% at 50% -25%, rgba(99, 102, 241, .16) 0%, transparent 60%), #08090d;
+  background: #08090d;
 }
 .lv-fit .lv-head { min-height: 30px; flex-wrap: nowrap; }
 .lv-fit .lv-status { height: 28px; }
