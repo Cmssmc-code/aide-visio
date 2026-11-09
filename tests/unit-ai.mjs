@@ -131,11 +131,10 @@ test('pick : ordre de repli (Gemini puis Claude), réglage fournisseur, sans cl�
   const ai = env.ai;
   const a = ai.pick('answer');
   assert.equal(a[0].provider, 'gemini');
-  assert.equal(a[0].model, 'gemini-3.8-flash');
+  assert.equal(a[0].model, 'gemini-3.6-flash');
   const gi = a.filter(c => c.provider === 'gemini').map(c => c.model);
-  assert.ok(gi.indexOf('gemini-flash-latest') > gi.indexOf('gemini-3-flash-preview'));
-  assert.ok(gi.indexOf('gemini-2.5-flash') > gi.indexOf('gemini-flash-latest'));
-  assert.ok(gi.indexOf('gemini-flash-lite-latest') > gi.indexOf('gemini-2.5-flash'), 'lite après flash');
+  assert.ok(gi.indexOf('gemini-2.5-flash') > gi.indexOf('gemini-3.6-flash'));
+  assert.ok(gi.indexOf('gemini-3.5-flash-lite') > gi.indexOf('gemini-2.5-flash'), 'lite après flash');
   const firstClaude = a.findIndex(c => c.provider === 'claude');
   assert.ok(firstClaude > 0 && a.slice(firstClaude).every(c => c.provider === 'claude'));
   assert.equal(a[firstClaude].model, 'claude-haiku-5-5');
@@ -184,7 +183,7 @@ test('discover : filtre (image, tts, gemma, exp…), classe, met en cache 12 h',
   assert.ok(d.gemini.includes('gemini-3.6-flash'));
   assert.ok(!d.claude.includes('claude-3-haiku-20240307'));
   const a = env.ai.pick('answer').map(c => c.model);
-  assert.deepEqual(Array.from(a.slice(0, 4)), ['gemini-3.6-flash', 'gemini-3-flash-preview', 'gemini-flash-latest', 'gemini-2.5-flash']);
+  assert.deepEqual(Array.from(a.slice(0, 4)), ['gemini-3.6-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-flash-latest']);
   assert.ok(a.indexOf('gemini-3.6-flash-lite') > a.indexOf('gemini-2.5-flash'));
   assert.ok(!a.includes('gemini-2.5-pro'), 'pas de pro pour answer');
   assert.ok(env.ai.pick('prep').some(c => c.model === 'gemini-2.5-pro'), 'pro possible pour prep');
@@ -210,12 +209,12 @@ test('generate : streaming SSE Gemini (paquets coupés, UTF-8 coupé, pensées i
   const r = await env.ai.generate({ purpose: 'answer', system: 'SYS', prompt: 'Q', stream: true, onDelta: t => deltas.push(t) });
   assert.equal(r.text, '**Je pilote la clôture mensuelle.**\n- **Délais** : J+5');
   assert.equal(r.provider, 'gemini');
-  assert.equal(r.model, 'gemini-3.8-flash');
+  assert.equal(r.model, 'gemini-3.6-flash');
   assert.equal(deltas.length, 3);
   assert.equal(deltas[0], '**Je pilote ');
   assert.ok(typeof r.firstTokenMs === 'number' && typeof r.ms === 'number');
   const c = env.calls[0];
-  assert.ok(c.url.endsWith('/models/gemini-3.8-flash:streamGenerateContent?alt=sse'));
+  assert.ok(c.url.endsWith('/models/gemini-3.6-flash:streamGenerateContent?alt=sse'));
   assert.equal(c.headers['x-goog-api-key'], 'g-key');
   assert.equal(c.body.systemInstruction.parts[0].text, 'SYS');
   assert.equal(c.body.generationConfig.thinkingConfig.thinkingLevel, 'low');
@@ -227,20 +226,20 @@ test('generate : streaming SSE Gemini (paquets coupés, UTF-8 coupé, pensées i
 
 test('429 → bascule sur le modèle suivant + circuit breaker 5 min', async () => {
   const env = makeEnv({ geminiKey: 'g-key' });
-  env.handler = (c) => modelOf(c) === 'gemini-3.8-flash' ? err(429, 'Resource exhausted') : geminiSSE(['Réponse B']);
+  env.handler = (c) => modelOf(c) === 'gemini-3.6-flash' ? err(429, 'Resource exhausted') : geminiSSE(['Réponse B']);
   const r = await env.ai.generate({ prompt: 'Q', stream: true });
-  assert.equal(r.model, 'gemini-3.6-flash');
+  assert.equal(r.model, 'gemini-2.5-flash');
   assert.equal(r.text, 'Réponse B');
   const st = env.events.filter(e => e.type === 'ai:status');
   assert.equal(st[0].ok, false);
-  assert.equal(st[0].model, 'gemini-3.8-flash');
+  assert.equal(st[0].model, 'gemini-3.6-flash');
   assert.equal(st[0].error, 'Limite gratuite de Gemini atteinte pour aujourd\'hui. Réessayez demain ou ajoutez une clé OpenAI.');
   assert.equal(st[1].ok, true);
-  assert.ok(env.ai.state().breaker.some(b => b.model === 'gemini-3.8-flash'));
+  assert.ok(env.ai.state().breaker.some(b => b.model === 'gemini-3.6-flash'));
   env.calls.length = 0;
   await env.ai.generate({ prompt: 'Q2', stream: true });
-  assert.equal(modelOf(gen(env)[0]), 'gemini-3.6-flash', 'le modèle en échec passe en dernier');
-  assert.equal(env.ai.pick('answer').at(-1).model, 'gemini-3.8-flash');
+  assert.equal(modelOf(gen(env)[0]), 'gemini-2.5-flash', 'le modèle en échec passe en dernier');
+  assert.equal(env.ai.pick('answer').at(-1).model, 'gemini-3.6-flash');
 });
 
 test('400 dû à thinkingConfig → réessai du même modèle sans, mémorisé', async () => {
@@ -250,11 +249,11 @@ test('400 dû à thinkingConfig → réessai du même modèle sans, mémorisé',
     : gJson('OK sans pensée');
   const r = await env.ai.generate({ prompt: 'Q' });
   assert.equal(r.text, 'OK sans pensée');
-  assert.equal(r.model, 'gemini-3.8-flash');
+  assert.equal(r.model, 'gemini-3.6-flash');
   assert.equal(env.calls.length, 2);
-  assert.equal(modelOf(env.calls[1]), 'gemini-3.8-flash');
+  assert.equal(modelOf(env.calls[1]), 'gemini-3.6-flash');
   assert.equal(env.calls[1].body.generationConfig.thinkingConfig, undefined);
-  assert.ok(env.ai.state().noThinking.includes('gemini-3.8-flash'));
+  assert.ok(env.ai.state().noThinking.includes('gemini-3.6-flash'));
   env.calls.length = 0;
   await env.ai.generate({ prompt: 'Q2' });
   assert.equal(env.calls.length, 1, 'plus de thinkingConfig envoyé ensuite');
@@ -379,12 +378,12 @@ test('400 API_KEY_INVALID (Gemini) traité comme une clé refusée', async () =>
 test('timeout du premier token (flux muet qui ignore l\'annulation) → modèle suivant', async () => {
   const env = makeEnv({ geminiKey: 'g-key' });
   env.ai.config.firstTokenMs = 150;
-  env.handler = (c) => modelOf(c) === 'gemini-3.8-flash' ? bytesResponse('', { hangAfter: true }) : geminiSSE(['Vite']);
+  env.handler = (c) => modelOf(c) === 'gemini-3.6-flash' ? bytesResponse('', { hangAfter: true }) : geminiSSE(['Vite']);
   const t0 = Date.now();
   const r = await env.ai.generate({ prompt: 'Q', stream: true });
   const dt = Date.now() - t0;
   assert.equal(r.text, 'Vite');
-  assert.equal(r.model, 'gemini-3.6-flash');
+  assert.equal(r.model, 'gemini-2.5-flash');
   assert.ok(dt < 1500, 'bascule rapide (' + dt + ' ms)');
   const st = env.events.find(e => e.type === 'ai:status' && !e.ok);
   assert.equal(st.code, 'TIMEOUT');
@@ -393,10 +392,10 @@ test('timeout du premier token (flux muet qui ignore l\'annulation) → modèle 
 test('timeout : fetch qui ne répond jamais (non-stream) → bascule', async () => {
   const env = makeEnv({ geminiKey: 'g-key' });
   env.ai.config.totalMs = 120;
-  env.handler = (c) => modelOf(c) === 'gemini-3.8-flash' ? new Promise(() => {}) : gJson('Rattrapé');
+  env.handler = (c) => modelOf(c) === 'gemini-3.6-flash' ? new Promise(() => {}) : gJson('Rattrapé');
   const r = await env.ai.generate({ prompt: 'Q' });
   assert.equal(r.text, 'Rattrapé');
-  assert.ok(env.ai.state().breaker.some(b => b.model === 'gemini-3.8-flash' && b.code === 'TIMEOUT'));
+  assert.ok(env.ai.state().breaker.some(b => b.model === 'gemini-3.6-flash' && b.code === 'TIMEOUT'));
 });
 
 test('annulation utilisateur (AbortSignal chaîné) → AbortError, aucune bascule', async () => {
@@ -414,7 +413,7 @@ test('annulation utilisateur (AbortSignal chaîné) → AbortError, aucune bascu
 
 test('coupure réseau en plein flux → bascule, texte complet du modèle suivant', async () => {
   const env = makeEnv({ geminiKey: 'g-key' });
-  env.handler = (c) => modelOf(c) === 'gemini-3.8-flash'
+  env.handler = (c) => modelOf(c) === 'gemini-3.6-flash'
     ? bytesResponse(gEvent('Début coupé'), { failAfter: new TypeError('network error') })
     : geminiSSE(['Réponse ', 'complète']);
   const deltas = [];
@@ -549,9 +548,9 @@ test('Claude : 400 sur temperature → réessai sans ; 529 overloaded en plein f
 
 test('403 propre à un modèle → modèle suivant sans ai:keyerror ; 2e 403 → clé en cause', async () => {
   const env = makeEnv({ geminiKey: 'g-key' });
-  env.handler = (c) => modelOf(c) === 'gemini-3.8-flash' ? err(403, 'Permission denied on resource project for model', { status: 'PERMISSION_DENIED' }) : gJson('OK');
+  env.handler = (c) => modelOf(c) === 'gemini-3.6-flash' ? err(403, 'Permission denied on resource project for model', { status: 'PERMISSION_DENIED' }) : gJson('OK');
   const r = await env.ai.generate({ prompt: 'Q' });
-  assert.equal(r.model, 'gemini-3.6-flash');
+  assert.equal(r.model, 'gemini-2.5-flash');
   assert.equal(env.events.filter(e => e.type === 'ai:keyerror').length, 0);
   const e2 = makeEnv({ geminiKey: 'g-key', claudeKey: 'c-key' });
   e2.handler = (c) => isGemini(c) ? err(403, 'Forbidden', { status: 'PERMISSION_DENIED' }) : cJson('Claude');

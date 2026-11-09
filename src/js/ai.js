@@ -15,7 +15,7 @@
   const OPENAI_PREF = ['gpt-6-luna', 'gpt-5.4-mini', 'gpt-5.6-luna', 'gpt-5.4-nano', 'gpt-5.5', 'gpt-5-mini', 'gpt-5-nano'];
   const FALLBACK = {
     openai: ['gpt-6-luna', 'gpt-5.4-mini', 'gpt-5.4-nano'],
-    gemini: ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-flash-latest', 'gemini-2.5-flash',
+    gemini: ['gemini-3.6-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash',
       'gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite'],
     claude: ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-haiku-4-5', 'claude-sonnet-4-5'],
     groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'moonshotai/kimi-k2-instruct-0905', 'llama-3.3-70b-versatile']
@@ -313,7 +313,9 @@
     if (!tier) return null;
     const preview = /preview/.test(rest);
     const dated = /\d{2}-\d{2,4}|-\d{3}$/.test(rest);
-    return { id, ver, tier, score: ver * 100 - (preview ? 2 : 0) - (dated ? 1 : 0) };
+    // Mesuré le 09/11/2026 avec la clé de Corentin : gemini-3.8-flash et les alias -latest ne répondent pas (> 40 s).
+    const hangs = /^gemini-3\.8-flash$|-latest$/.test(id);
+    return { id, ver, tier, score: ver * 100 - (preview ? 2 : 0) - (dated ? 1 : 0) - (hangs ? 1000 : 0) };
   }
 
   function claudeInfo(id) {
