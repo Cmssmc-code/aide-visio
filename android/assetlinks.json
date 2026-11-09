@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "io.github.cmssmc_code.aidevisio",
+      "sha256_cert_fingerprints": ["C8:0B:D4:00:08:15:E2:ED:34:8E:39:1D:CE:BD:5E:10:2E:49:A8:D8:5A:D8:CF:CA:41:F3:B6:00:E9:70:C5:70"]
+    }
+  }
+]

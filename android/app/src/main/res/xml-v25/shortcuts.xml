@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_new"
+        android:shortcutId="oral"
+        android:shortcutLongLabel="@string/shortcutNewLong"
+        android:shortcutShortLabel="@string/shortcutNewShort">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="https://cmssmc-code.github.io/aide-visio/#/oral"
+            android:targetClass="com.google.androidbrowserhelper.trusted.ShortcutTrampolineActivity"
+            android:targetPackage="io.github.cmssmc_code.aidevisio" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_diag"
+        android:shortcutId="diagnostic"
+        android:shortcutLongLabel="@string/shortcutDiagLong"
+        android:shortcutShortLabel="@string/shortcutDiagShort">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="https://cmssmc-code.github.io/aide-visio/#/diag"
+            android:targetClass="com.google.androidbrowserhelper.trusted.ShortcutTrampolineActivity"
+            android:targetPackage="io.github.cmssmc_code.aidevisio" />
+    </shortcut>
+</shortcuts>

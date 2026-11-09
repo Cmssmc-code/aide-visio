@@ -1,0 +1,40 @@
+{
+  "id": "./",
+  "name": "Aide Visio — oral d'anglais UE 218",
+  "short_name": "Aide Visio",
+  "description": "Simulateur d'oral blanc d'anglais des affaires (UE 218 du DSGC) : sujets d'entraînement, console du jury pendant l'appel Teams, entraînement solo avec jury IA, fiches de méthode et correction.",
+  "lang": "fr-FR",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
+  "background_color": "#f5f5f7",
+  "theme_color": "#f5f5f7",
+  "categories": ["education", "productivity", "business"],
+  "launch_handler": { "client_mode": "focus-existing" },
+  "edge_side_panel": { "preferred_width": 420 },
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Oral blanc",
+      "short_name": "Oral blanc",
+      "description": "Choisir un sujet et lancer un oral blanc",
+      "url": "./#/oral/new",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Fiches",
+      "short_name": "Fiches",
+      "description": "Méthode, phrases utiles, vocabulaire et actualité",
+      "url": "./#/fiches",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

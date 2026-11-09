@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+    <application
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/appName"
+        android:manageSpaceActivity="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.Translucent.NoTitleBar"
+        tools:targetApi="36">
+
+        <meta-data
+            android:name="asset_statements"
+            android:resource="@string/assetStatements" />
+
+        <meta-data
+            android:name="web_manifest_url"
+            android:value="@string/webManifestUrl" />
+
+        <activity
+            android:name="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
+            android:exported="false">
+            <meta-data
+                android:name="android.support.customtabs.trusted.MANAGE_SPACE_URL"
+                android:value="@string/launchUrl" />
+        </activity>
+
+        <activity
+            android:name=".LauncherActivity"
+            android:alwaysRetainTaskState="true"
+            android:exported="true"
+            android:label="@string/launcherName">
+
+            <meta-data
+                android:name="android.support.customtabs.trusted.DEFAULT_URL"
+                android:value="@string/launchUrl" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR"
+                android:resource="@color/statusBarColor" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR_DARK"
+                android:resource="@color/statusBarColorDark" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR"
+                android:resource="@color/navigationBarColor" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR_DARK"
+                android:resource="@color/navigationBarColorDark" />
+            <meta-data
+                android:name="androix.browser.trusted.NAVIGATION_BAR_DIVIDER_COLOR"
+                android:resource="@color/navigationBarDividerColor" />
+            <meta-data
+                android:name="androix.browser.trusted.NAVIGATION_BAR_DIVIDER_COLOR_DARK"
+                android:resource="@color/navigationBarDividerColorDark" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.SPLASH_IMAGE_DRAWABLE"
+                android:resource="@drawable/splash" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.SPLASH_SCREEN_BACKGROUND_COLOR"
+                android:resource="@color/splashBackgroundColor" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.SPLASH_SCREEN_FADE_OUT_DURATION"
+                android:value="@integer/splashFadeOutMs" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.FILE_PROVIDER_AUTHORITY"
+                android:value="@string/providerAuthority" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.SCREEN_ORIENTATION"
+                android:value="any" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.LAUNCH_HANDLER_CLIENT_MODE"
+                android:value="focus-existing" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.FALLBACK_STRATEGY"
+                android:value="webview" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.COLD_SHORTCUT_ACTIVITY"
+                android:value=".ColdShortcutActivity" />
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="${hostName}"
+                    android:pathPrefix="${pathPrefix}" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".ColdShortcutActivity"
+            android:exported="false"
+            android:theme="@style/Theme.ColdShortcutActivity" />
+
+        <activity
+            android:name="com.google.androidbrowserhelper.trusted.FocusActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".WebFallbackActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection"
+            android:enableOnBackInvokedCallback="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.AideVisio.Web"
+            android:windowSoftInputMode="adjustResize" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="io.github.cmssmc_code.aidevisio.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/filepaths" />
+        </provider>
+    </application>
+</manifest>

@@ -1,0 +1,123 @@
+import groovy.json.JsonSlurper
+
+plugins {
+    id 'com.android.application'
+}
+
+def appUrl = (project.findProperty('aidevisioUrl') ?: 'https://cmssmc-code.github.io/aide-visio/').toString()
+if (!appUrl.endsWith('/')) appUrl += '/'
+def appUri = new URI(appUrl)
+if (appUri.scheme != 'https' || !appUri.host) {
+    throw new GradleException("aidevisioUrl doit être une URL https complète (reçu : ${appUrl})")
+}
+def appHost = appUri.host
+def appOrigin = "https://${appUri.authority}"
+def appPath = appUri.path ?: '/'
+def appPathPrefix = (appPath.length() > 1 && appPath.endsWith('/')) ? appPath.substring(0, appPath.length() - 1) : appPath
+
+def shortcutsXml = file('src/main/res/xml-v25/shortcuts.xml')
+if (shortcutsXml.exists()) {
+    def shortcutUrls = (shortcutsXml.getText('UTF-8') =~ /android:data="([^"]*)"/).collect { it[1] }
+    if (shortcutUrls.isEmpty() || shortcutUrls.any { !it.startsWith(appUrl) }) {
+        throw new GradleException("res/xml-v25/shortcuts.xml ne pointe pas vers ${appUrl} : mettez à jour les URL des raccourcis.")
+    }
+}
+
+def packageJson = rootProject.file('../package.json')
+def defaultVersionName = packageJson.exists() ? (new JsonSlurper().parse(packageJson).version ?: '1.0.0').toString() : '1.0.0'
+def appVersionName = (project.findProperty('aidevisioVersionName') ?: defaultVersionName).toString()
+def versionParts = (appVersionName.tokenize('.-+') + ['0', '0', '0']).take(3).collect { it.isInteger() ? it.toInteger() : 0 }
+def appVersionCode = (project.findProperty('aidevisioVersionCode') ?: (versionParts[0] * 10000 + versionParts[1] * 100 + versionParts[2])).toString().toInteger()
+if (appVersionCode < 1) appVersionCode = 1
+
+def signingFile = file(System.getenv('AIDE_VISIO_SIGNING_PROPERTIES') ?: "${System.getProperty('user.home')}/.aidevisio/release.properties")
+def signingProps = new Properties()
+if (signingFile.exists()) {
+    signingFile.withInputStream { signingProps.load(it) }
+}
+def hasSigning = signingProps.getProperty('storeFile') && file(signingProps.getProperty('storeFile')).exists()
+
+android {
+    namespace = 'io.github.cmssmc_code.aidevisio'
+    compileSdk = 36
+    buildToolsVersion = '36.0.0'
+
+    defaultConfig {
+        applicationId = 'io.github.cmssmc_code.aidevisio'
+        minSdk = 24
+        targetSdk = 36
+        versionCode = appVersionCode
+        versionName = appVersionName
+
+        manifestPlaceholders = [
+            hostName  : appHost,
+            pathPrefix: appPathPrefix,
+        ]
+
+        resValue 'string', 'launchUrl', appUrl
+        resValue 'string', 'appOrigin', appOrigin
+        resValue 'string', 'webManifestUrl', appUrl + 'manifest.webmanifest'
+        resValue 'string', 'providerAuthority', 'io.github.cmssmc_code.aidevisio.fileprovider'
+        resValue 'string', 'assetStatements',
+            '[{\\"relation\\": [\\"delegate_permission/common.handle_all_urls\\"], ' +
+            '\\"target\\": {\\"namespace\\": \\"web\\", \\"site\\": \\"' + appOrigin + '\\"}}]'
+    }
+
+    signingConfigs {
+        release {
+            if (hasSigning) {
+                storeFile = file(signingProps.getProperty('storeFile'))
+                storePassword = signingProps.getProperty('storePassword')
+                keyAlias = signingProps.getProperty('keyAlias')
+                keyPassword = signingProps.getProperty('keyPassword') ?: signingProps.getProperty('storePassword')
+                enableV1Signing = false
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled = true
+            shrinkResources = true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig = hasSigning ? signingConfigs.release : null
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
+
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
+    packaging {
+        resources {
+            excludes += ['META-INF/*.version', 'META-INF/*.kotlin_module', 'kotlin/**', 'DebugProbesKt.bin']
+        }
+    }
+}
+
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.7.4'
+    implementation 'androidx.webkit:webkit:1.17.1'
+}
+
+tasks.register('printAideVisioConfig') {
+    doLast {
+        println "AIDE_VISIO_URL=${appUrl}"
+        println "AIDE_VISIO_VERSION_NAME=${appVersionName}"
+        println "AIDE_VISIO_VERSION_CODE=${appVersionCode}"
+        println "AIDE_VISIO_SIGNED=${hasSigning}"
+    }
+}
