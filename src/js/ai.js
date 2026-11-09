@@ -10,13 +10,15 @@
   const PROVIDERS = ['openai', 'gemini', 'claude', 'groq'];
   const LABEL = { openai: 'OpenAI', gemini: 'Gemini', claude: 'Claude', groq: 'Groq' };
 
-  const OPENAI_PREF = ['gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5.5', 'gpt-5-mini', 'gpt-5-nano'];
+  // Modèles (nov. 2026) : les plus rapides d'abord. La découverte (/models) remplace ces listes
+  // par ce que la clé voit réellement ; ces listes ne servent qu'avant la 1re découverte.
+  const OPENAI_PREF = ['gpt-5.4-mini', 'gpt-5.6-luna', 'gpt-5.4-nano', 'gpt-5.5', 'gpt-5-mini', 'gpt-5-nano'];
   const FALLBACK = {
-    openai: OPENAI_PREF.slice(0, 3),
-    gemini: ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3-flash-preview', 'gemini-flash-latest',
-      'gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'],
+    openai: ['gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5.5'],
+    gemini: ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-flash-latest', 'gemini-2.5-flash',
+      'gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite'],
     claude: ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-haiku-4-5', 'claude-sonnet-4-5'],
-    groq: ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'moonshotai/kimi-k2-instruct-0905']
+    groq: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'moonshotai/kimi-k2-instruct-0905', 'llama-3.3-70b-versatile']
   };
   const WHISPER = ['whisper-large-v3-turbo', 'whisper-large-v3'];
 
@@ -29,11 +31,19 @@
     notFoundMs: 6 * 3600 * 1000,
     discoverTtlMs: 12 * 3600 * 1000,
     discoverTimeoutMs: 8000,
-    autoDiscover: true
+    autoDiscover: true,
+    // Aide en direct (réponse proposée pendant l'appel) : délais courts, 2e modèle lancé en parallèle
+    // seulement si le 1er n'a encore rien écrit après hedgeMs.
+    liveFirstTokenMs: 6000,
+    liveIdleMs: 8000,
+    hedgeMs: 2500,
+    slowMs: 2 * 60 * 1000,
+    warmMs: 15000
   };
 
   const breaker = new Map();
   const noThinking = new Set();
+  const noMinimal = new Set();
   const deadKeys = {};
   const lastDiscoverTry = { openai: 0, gemini: 0, claude: 0, groq: 0 };
   let lastOk = null;
@@ -93,19 +103,34 @@
     return !!e && (e.name === 'AbortError' || e.code === 'ABORTED');
   }
 
-  function frMessage(code, provider, status, detail) {
-    const L = LABEL[provider] || 'IA';
+  const MSG_NETWORK = 'Pas de connexion Internet : vérifiez le Wi-Fi puis réessayez.';
+
+  // Messages pour l'utilisateur : français simple, sans code HTTP ni jargon, avec l'action à faire.
+  // kind (QUOTA) : 'minute' (trop de demandes d'un coup), 'credit' (compte à recharger), sinon limite du jour.
+  function frMessage(code, provider, status, detail, kind) {
+    const L = LABEL[provider] || 'l\'IA';
+    const Lc = L.charAt(0).toUpperCase() + L.slice(1);
     switch (code) {
-      case 'KEY': return 'Clé ' + L + ' refusée' + (status ? ' (' + status + ')' : '') + ' — vérifiez-la dans les réglages.';
-      case 'QUOTA': return 'Quota ' + L + ' atteint (429).';
-      case 'NOT_FOUND': return 'Modèle ' + L + ' indisponible (404).';
-      case 'SERVER': return 'Service ' + L + ' surchargé ou en panne' + (status ? ' (' + status + ')' : '') + '.';
-      case 'BAD_REQUEST': return 'Requête refusée par ' + L + (status ? ' (' + status + ')' : '') + (detail ? ' : ' + clip(detail, 140) : '') + '.';
-      case 'TIMEOUT': return L + ' ne répond pas assez vite.';
-      case 'NETWORK': return 'Connexion à ' + L + ' impossible (réseau).';
-      case 'BLOCKED': return 'Réponse bloquée par le filtre de sécurité ' + L + '.';
-      case 'EMPTY': return 'Réponse vide de ' + L + '.';
-      default: return 'Erreur ' + L + (status ? ' (' + status + ')' : '') + (detail ? ' : ' + clip(detail, 140) : '') + '.';
+      case 'KEY': return 'Clé ' + L + ' refusée : recopiez-la en entier dans Réglages.';
+      case 'QUOTA': {
+        if (kind === 'credit') {
+          return 'Crédit ' + L + ' épuisé : rechargez votre compte ' + L + (keyOf('gemini') ? '.' : ' ou ajoutez une clé Gemini (gratuite) dans Réglages.');
+        }
+        if (kind === 'minute') return 'Trop de demandes envoyées à ' + L + ' : patientez une minute puis réessayez.';
+        if (provider === 'gemini') {
+          return 'Limite gratuite de Gemini atteinte pour aujourd\'hui. Réessayez demain' + (keyOf('openai') ? '.' : ' ou ajoutez une clé OpenAI.');
+        }
+        if (provider === 'groq') return 'Limite gratuite de Groq atteinte : réessayez dans quelques minutes.';
+        return 'Limite ' + L + ' atteinte : patientez une minute puis réessayez.';
+      }
+      case 'NOT_FOUND': return 'L\'IA ne répond plus à cette adresse. Mettez à jour l\'appli.';
+      case 'SERVER': return Lc + ' est surchargé en ce moment : réessayez dans un instant.';
+      case 'BAD_REQUEST': return Lc + ' n\'a pas compris la demande : réessayez. Si cela recommence, mettez à jour l\'appli.';
+      case 'TIMEOUT': return Lc + ' met trop de temps à répondre : réessayez.';
+      case 'NETWORK': return MSG_NETWORK;
+      case 'BLOCKED': return Lc + ' a refusé de répondre à cette demande : reformulez-la.';
+      case 'EMPTY': return Lc + ' a renvoyé une réponse vide : réessayez.';
+      default: return 'Problème inattendu avec ' + L + ' : réessayez.';
     }
   }
 
@@ -136,18 +161,24 @@
       parsed = j;
       detail = (j.error && (j.error.message || j.error.type || j.error.status)) || j.message || '';
     } catch (e) { detail = raw.slice(0, 300); }
-    const keySignal = /API_KEY_INVALID|API key not valid|API key expired|api[_ -]?key|x-api-key|leaked|has not been used|SERVICE_DISABLED|CONSUMER_INVALID|authentication_error|billing/i.test(raw);
-    const keyBad = status === 401 || status === 403 || (status === 400 && keySignal);
+    const credit = /insufficient_quota|credit balance|exceeded your current quota|billing_hard_limit|payment required/i.test(raw) || status === 402;
+    const keySignal = !credit && /API_KEY_INVALID|API key not valid|API key expired|api[_ -]?key|x-api-key|leaked|has not been used|SERVICE_DISABLED|CONSUMER_INVALID|authentication_error|billing/i.test(raw);
+    const keyBad = !credit && (status === 401 || status === 403 || (status === 400 && keySignal));
     let code;
+    let kind = '';
     if (keyBad) code = 'KEY';
-    else if (status === 429) code = 'QUOTA';
+    else if (status === 429 || credit) {
+      code = 'QUOTA';
+      if (credit) kind = 'credit';
+      else if (/PerMinute|per[ _-]minute|PerSecond|requests per min|tokens per min|\bRPM\b|\bTPM\b|rate_limit/i.test(raw) && !/PerDay|per[ _-]day|\bRPD\b|\bTPD\b/i.test(raw)) kind = 'minute';
+    }
     else if (status === 404) code = 'NOT_FOUND';
     else if (status === 408 || status >= 500) code = 'SERVER';
     else if (status === 400 || status === 413 || status === 422) code = 'BAD_REQUEST';
     else code = 'HTTP';
     const extra = { status, provider, model, keyStrong: status === 401 || keySignal, detail: String(detail || raw).slice(0, 500) };
-    if (code === 'QUOTA') extra.retryAfterMs = parseRetryAfter(parsed, retryHeader);
-    return aiError(code, frMessage(code, provider, status, detail), extra);
+    if (code === 'QUOTA') { extra.retryAfterMs = parseRetryAfter(parsed, retryHeader); extra.quotaKind = kind || 'day'; }
+    return aiError(code, frMessage(code, provider, status, detail, kind), extra);
   }
 
   function claudeErrStatus(type) {
@@ -294,15 +325,19 @@
     return null;
   }
 
-  const EXCLUDE_GROQ = /whisper|guard|tts|playai|orpheus|compound|distil|instant|safeguard|allam|embed|vision|audio|-8b|-1b|-3b|mini|scout|20b/i;
+  // gpt-oss-20b est gardé (≈ 1000 jetons/s, très bon en secours rapide) ; les autres petits modèles sont exclus.
+  // (Avant : « 20b » excluait aussi gpt-oss-120b, le meilleur modèle Groq.)
+  const EXCLUDE_GROQ = /whisper|guard|tts|playai|orpheus|compound|distil|instant|safeguard|allam|embed|vision|audio|-8b|-1b|-3b|mini|scout/i;
   function groqInfo(id) {
     id = String(id || '');
     if (!id || EXCLUDE_GROQ.test(id)) return null;
-    const score = /gpt-oss-120b/.test(id) ? 90 : /kimi-k/.test(id) ? 86 : /llama-3\.3-70b/.test(id) ? 80 : /llama-4-maverick/.test(id) ? 78 : /qwen3/.test(id) ? 70 : 40;
+    if (/(^|[^0-9])20b/i.test(id) && !/gpt-oss-20b/i.test(id)) return null;
+    // Llama 3.3 70B est retiré des offres gratuites de Groq (2026) : en dernier.
+    const score = /gpt-oss-120b/.test(id) ? 90 : /gpt-oss-20b/.test(id) ? 87 : /kimi-k/.test(id) ? 84 : /qwen3/.test(id) ? 70 : /llama-4-maverick/.test(id) ? 68 : /llama-3\.3-70b/.test(id) ? 60 : 40;
     return { id, score: score + (/\d{4}$/.test(id) ? 1 : 0) };
   }
-  function rankGroq(ids) {
-    return (ids || []).map(groqInfo).filter(Boolean).sort((a, b) => b.score - a.score).map(i => i.id).slice(0, 3);
+  function rankGroq(ids, n) {
+    return (ids || []).map(groqInfo).filter(Boolean).sort((a, b) => b.score - a.score).map(i => i.id).slice(0, n || 3);
   }
 
   function rankOpenai(ids) {
@@ -326,7 +361,7 @@
     const flash = tier('flash');
     const lite = tier('lite');
     const pro = bestPerVersion(infos.filter(i => i.tier === 'pro' && i.ver >= 2.5), i => i.score).map(i => i.id);
-    if (purpose === 'fast') return lite.slice(0, 3).concat(flash.slice(0, 3));
+    if (purpose === 'fast' || purpose === 'live') return lite.slice(0, 3).concat(flash.slice(0, 3));
     if (purpose === 'prep') return flash.slice(0, 4).concat(pro.slice(0, 1), lite.slice(0, 1));
     return flash.slice(0, 5).concat(lite.slice(0, 2));
   }
@@ -341,7 +376,7 @@
   }
 
   function usable(p, ids) {
-    if (p === 'groq') return rankGroq(ids);
+    if (p === 'groq') return rankGroq(ids, 6);
     if (p === 'openai') return rankOpenai(ids);
     if (p === 'gemini') {
       return (ids || []).map(geminiInfo).filter(Boolean)
@@ -368,6 +403,7 @@
     return ['openai', 'gemini', 'claude', 'groq'];
   }
 
+  // 'live' = aide en direct pendant l'appel (réponse proposée) : modèle choisi comme 'answer' dans les réglages.
   function settingPurpose(purpose) {
     return purpose === 'fast' ? 'fast' : purpose === 'prep' ? 'prep' : 'answer';
   }
@@ -452,9 +488,13 @@
     return o.ignoreBreaker ? list : order(list);
   }
 
-  function thinkingFor(model) {
+  // Réflexion Gemini : 'minimal' (Flash / Flash-Lite) pour l'aide en direct et les tâches rapides,
+  // 'low' sinon. Pro n'accepte pas 'minimal'.
+  function thinkingFor(model, purpose) {
     const m = String(model || '');
-    if (/^gemini-([3-9]|\d{2,})/.test(m)) return { thinkingLevel: 'low' };
+    if (/^gemini-([3-9]|\d{2,})/.test(m)) {
+      return { thinkingLevel: (purpose === 'live' || purpose === 'fast') && !/pro/.test(m) ? 'minimal' : 'low' };
+    }
     if (/2\.5/.test(m)) return /pro/.test(m) ? { thinkingBudget: 128 } : { thinkingBudget: 0 };
     return null;
   }
@@ -570,10 +610,11 @@
     const gc = {};
     if (typeof o.temperature === 'number') gc.temperature = o.temperature;
     let max = v.maxTokens || o.maxTokens || 1024;
-    const th = v.thinking ? thinkingFor(model) : null;
+    let th = v.thinking ? thinkingFor(model, o.purpose) : null;
+    if (th && th.thinkingLevel && v.thinkLevel) th = { thinkingLevel: v.thinkLevel };
     if (th) {
       gc.thinkingConfig = th;
-      if (th.thinkingLevel) max += 8192; else if (th.thinkingBudget) max += th.thinkingBudget * 2;
+      if (th.thinkingLevel) max += th.thinkingLevel === 'minimal' ? 1024 : 8192; else if (th.thinkingBudget) max += th.thinkingBudget * 2;
     }
     gc.maxOutputTokens = max;
     if (o.json) gc.responseMimeType = 'application/json';
@@ -797,7 +838,7 @@
         if (e && (e.code === 'QUOTA' || e.code === 'SERVER' || e.code === 'TIMEOUT')) trip({ provider: 'groq', model }, config.breakerMs, e.code);
       } finally { att.done(); }
     }
-    throw lastErr || aiError('ALL_FAILED', 'Whisper indisponible.');
+    throw lastErr || aiError('ALL_FAILED', 'La transcription est indisponible pour le moment : réessayez dans un instant.');
   }
 
   async function callOnce(c, o, v) {
@@ -827,12 +868,13 @@
   const TRUNCATED = /^(MAX_TOKENS|max_tokens|length)$/;
 
   async function tryCandidate(c, o) {
-    const v = { thinking: c.provider === 'gemini' && !noThinking.has(c.model), noTemperature: false, maxTokens: 0 };
-    for (let i = 0; i < 4; i++) {
+    const v = { thinking: c.provider === 'gemini' && !noThinking.has(c.model), noTemperature: false, maxTokens: 0, thinkLevel: noMinimal.has(c.model) ? 'low' : '' };
+    for (let i = 0; i < 5; i++) {
       try {
         const r = await callOnce(c, o, v);
         if (c.provider === 'gemini' && !v.thinking && thinkingFor(c.model)) noThinking.add(c.model);
-        if (TRUNCATED.test(String(r.finish || '')) && !v.bigTokens) {
+        // Aide en direct : pas de 2e appel pour une réponse un peu longue, on garde ce qui est écrit.
+        if (TRUNCATED.test(String(r.finish || '')) && !v.bigTokens && o.purpose !== 'live') {
           v.bigTokens = true;
           v.maxTokens = Math.max(8192, (o.maxTokens || 1024) * 4);
           emit('ai:status', { provider: c.provider, model: c.model, ok: false, purpose: o.purpose, error: 'réponse tronquée, relance', code: 'TRUNCATED' });
@@ -844,6 +886,10 @@
         if (!e || e.code !== 'BAD_REQUEST' || e.partialText) throw e;
         const d = String(e.detail || '');
         if (!v.maxTokens && /max_?(?:output_?)?tokens|maxOutputTokens/i.test(d) && (o.maxTokens || 0) > 8192) { v.maxTokens = 8192; continue; }
+        if (c.provider === 'gemini' && v.thinking && !v.thinkLevel && /minimal|thinking/i.test(d)) {
+          const th = thinkingFor(c.model, o.purpose);
+          if (th && th.thinkingLevel === 'minimal') { v.thinkLevel = 'low'; noMinimal.add(c.model); continue; }
+        }
         if (c.provider === 'gemini' && v.thinking && thinkingFor(c.model)) { v.thinking = false; continue; }
         if (c.provider === 'claude' && !v.noTemperature && /temperature/i.test(d)) { v.noTemperature = true; continue; }
         if (c.provider === 'groq' && !v.noReasoning && /gpt-oss/.test(c.model) && /reasoning/i.test(d)) { v.noReasoning = true; continue; }
@@ -858,52 +904,231 @@
 
   function noKeyError(o) {
     if (o.providers && o.providers.length === 1 && o.providers[0] === 'gemini') {
-      return aiError('NO_KEY', 'Cette fonction demande une clé Gemini (gratuite sur aistudio.google.com/apikey) — ajoutez-la dans les réglages.');
+      return aiError('NO_KEY', 'Cette fonction demande une clé Gemini (gratuite sur aistudio.google.com/apikey) : ajoutez-la dans Réglages.');
     }
     if (o.parts && o.parts.length && PROVIDERS.some(p => keyOf(p))) {
-      return aiError('NO_KEY', 'Ce type de fichier demande une clé Gemini — ajoutez-la dans les réglages.');
+      return aiError('NO_KEY', 'Pour lire ce fichier, ajoutez une clé Gemini (gratuite) dans Réglages.');
     }
-    return aiError('NO_KEY', 'Aucune clé IA configurée — ajoutez une clé OpenAI, Gemini (gratuite) ou Claude dans les réglages.');
+    return aiError('NO_KEY', 'Aucune clé IA : ajoutez une clé Gemini (gratuite) ou OpenAI dans Réglages.');
+  }
+
+  // Quand tout a échoué, on ne montre qu'une cause : celle sur laquelle l'utilisateur peut agir.
+  const CAUSE_ORDER = ['KEY', 'QUOTA', 'NETWORK', 'NOT_FOUND', 'TIMEOUT', 'SERVER', 'BLOCKED', 'EMPTY', 'BAD_REQUEST'];
+  function mainCause(errors) {
+    let best = errors[errors.length - 1];
+    let rank = 99;
+    errors.forEach(e => {
+      const r = CAUSE_ORDER.indexOf(e.code);
+      if (r >= 0 && r < rank) { rank = r; best = e; }
+    });
+    return best;
   }
 
   function allFailed(errors) {
-    if (!errors.length) return aiError('ALL_FAILED', 'Aucun modèle IA disponible.');
+    if (!errors.length) return aiError('ALL_FAILED', 'L\'IA est indisponible pour le moment : réessayez dans un instant.');
     const last = errors[errors.length - 1];
     if (errors.every(e => e.code === 'KEY')) {
       return aiError('KEY', errors[0].message, { errors, provider: errors[0].provider, model: errors[0].model, status: errors[0].status });
     }
     if (errors.every(e => e.code === 'QUOTA')) {
       const ra = errors.reduce((m, e) => Math.max(m, e.retryAfterMs || 0), 0);
-      return aiError('QUOTA', errors[0].message, { errors, provider: last.provider, model: last.model, status: 429, retryAfterMs: ra, reason: 'QUOTA' });
+      const q = mainCause(errors.filter(e => e.quotaKind !== 'minute').length ? errors.filter(e => e.quotaKind !== 'minute') : errors);
+      return aiError('QUOTA', q.message, { errors, provider: q.provider, model: q.model, status: 429, retryAfterMs: ra, reason: 'QUOTA', quotaKind: q.quotaKind });
     }
-    const uniq = [];
-    errors.forEach(e => { if (uniq.indexOf(e.message) < 0) uniq.push(e.message); });
-    return aiError('ALL_FAILED', 'Aucun modèle IA n\'a répondu. ' + uniq.slice(0, 3).join(' · '),
-      { errors, provider: last.provider, model: last.model, reason: last.code });
+    const cause = mainCause(errors);
+    return aiError('ALL_FAILED', cause.message || 'L\'IA est indisponible pour le moment : réessayez dans un instant.',
+      { errors, provider: cause.provider || last.provider, model: cause.model || last.model, reason: cause.code, status: cause.status });
+  }
+
+  // Une tentative isolée (son propre AbortController) dont les morceaux de texte ne passent
+  // à l'appelant que si elle a « pris la main » (1re à écrire). Sert à la course de l'aide en direct.
+  function startAttempt(c, o, gate) {
+    const ctrl = new AbortController();
+    const onOuter = () => { try { ctrl.abort(); } catch (e) {  } };
+    if (o.signal) { if (o.signal.aborted) onOuter(); else o.signal.addEventListener('abort', onOuter); }
+    const a = { c, cancelled: false, t0: now() };
+    const so = Object.assign({}, o, {
+      signal: ctrl.signal,
+      onDelta: (full) => {
+        if (!gate.owner) { gate.owner = a; gate.claimed(a); }
+        if (gate.owner !== a) return;
+        if (o.onDelta) { try { o.onDelta(full); } catch (e) {  } }
+      }
+    });
+    a.cancel = () => { a.cancelled = true; try { ctrl.abort(); } catch (e) {  } };
+    a.p = tryCandidate(c, so).then(r => ({ a, r }), e => ({ a, e }))
+      .then(x => { if (o.signal) o.signal.removeEventListener('abort', onOuter); return x; });
+    return a;
+  }
+
+  // Course « au premier qui écrit » : lance c ; si rien n'est écrit après hedgeMs, lance backup en parallèle.
+  // Le 1er à écrire gagne, l'autre est annulé. Renvoie la liste des issues (gagnant ou échecs).
+  async function race(c, backup, o) {
+    let onClaim = null;
+    const gate = { owner: null, claimed: (a) => { if (onClaim) onClaim(a); } };
+    const runs = [startAttempt(c, o, gate)];
+    const out = [];
+    const pending = new Set([runs[0]]);
+    const settle = (x) => { pending.delete(x.a); out.push(x); return x; };
+    let hedgeTimer = null;
+    const hedge = backup ? new Promise(res => { hedgeTimer = setTimeout(() => res('hedge'), config.hedgeMs); }) : null;
+    const claimed = new Promise(res => { onClaim = (a) => res({ claim: a }); });
+    let hedged = false;
+    try {
+      for (;;) {
+        const waiters = Array.from(pending).map(a => a.p.then(x => ({ done: x })));
+        if (hedge && !hedged && !gate.owner) waiters.push(hedge);
+        if (!gate.owner) waiters.push(claimed);
+        if (!waiters.length) break;
+        const w = await Promise.race(waiters);
+        if (w === 'hedge') {
+          hedged = true;
+          if (!gate.owner && pending.size && !(o.signal && o.signal.aborted)) {
+            const b = startAttempt(backup, o, gate);
+            runs.push(b);
+            pending.add(b);
+            emit('ai:status', { provider: c.provider, model: c.model, ok: false, purpose: o.purpose, error: 'lent, 2e modèle lancé en parallèle', code: 'HEDGE' });
+          }
+          continue;
+        }
+        if (w.claim) {
+          runs.forEach(a => { if (a !== w.claim && pending.has(a)) a.cancel(); });
+          continue;
+        }
+        const x = settle(w.done);
+        if (x.r) {
+          pending.forEach(a => a.cancel());
+          break;
+        }
+        if (!pending.size) break;
+      }
+      // Récupère les issues des tentatives annulées (sans attendre un flux muet).
+      runs.forEach(a => { if (pending.has(a)) { pending.delete(a); out.push({ a, e: abortError(), loser: true }); } });
+    } finally {
+      clearTimeout(hedgeTimer);
+    }
+    out.forEach(x => { if (x.e && x.a.cancelled) x.loser = true; });
+    return { outcomes: out, hedged: runs.length > 1 ? runs[1].c : null };
+  }
+
+  // Aide en direct détectée sans changer l'appelant : réponse courte en flux avec affichage progressif.
+  function isLive(o) {
+    if (o.purpose === 'live') return true;
+    return o.purpose === 'answer' && !!o.stream && typeof o.onDelta === 'function' && (o.maxTokens || 0) <= 600 && !(o.parts && o.parts.length) && !o.json;
   }
 
   async function generate(opts) {
     const o = Object.assign({ purpose: 'answer', stream: false, temperature: 0.4, maxTokens: 1024 }, opts || {});
     if (o.signal && o.signal.aborted) throw abortError();
+    if (isLive(o)) {
+      o.purpose = 'live';
+      o.firstTokenMs = Math.min(o.firstTokenMs || o.timeoutMs || config.liveFirstTokenMs, config.liveFirstTokenMs);
+      o.idleMs = o.idleMs || config.liveIdleMs;
+    }
+    const live = o.purpose === 'live' && !!o.stream;
     const list = candidates(o);
     if (!list.length) throw noKeyError(o);
     maybeAutoDiscover();
     const run = { start: now() };
     const errors = [];
     const dead = new Set();
+    const done = new Set();
     const netFails = {};
     const forbidden = {};
     const budget = o.budgetMs || config.budgetMs;
     const maxTries = o.maxCandidates || 12;
     let partial = null;
     let tried = 0;
+    // Secours pour la course : de préférence un autre fournisseur (pannes et limites indépendantes).
+    const backupFor = (c) => {
+      if (!live || !(config.hedgeMs > 0)) return null;
+      const free = list.filter(x => x !== c && !done.has(bk(x)) && !dead.has(x.provider));
+      return free.find(x => x.provider !== c.provider) || free[0] || null;
+    };
+    const fail = (c, e, a0) => {
+      const err = (e && e.code) ? e : aiError('HTTP', frMessage('HTTP', c.provider, 0, String((e && e.message) || e)), { provider: c.provider, model: c.model });
+      errors.push(err);
+      emit('ai:status', { provider: c.provider, model: c.model, ok: false, ms: Math.round(now() - a0), purpose: o.purpose, error: err.message, code: err.code });
+      if (err.partialText && (!partial || err.partialText.length > partial.text.length)) {
+        partial = { text: err.partialText, provider: c.provider, model: c.model };
+      }
+      if (err.code === 'KEY' && !err.keyStrong && !forbidden[c.provider]) {
+        forbidden[c.provider] = 1;
+        trip(c, config.notFoundMs, 'FORBIDDEN');
+        return;
+      }
+      switch (err.code) {
+        case 'KEY':
+          dead.add(c.provider);
+          deadKeys[c.provider] = fingerprint(keyOf(c.provider));
+          emit('ai:keyerror', { provider: c.provider, status: err.status, message: err.message });
+          break;
+        case 'NETWORK':
+          if (typeof navigator !== 'undefined' && navigator && navigator.onLine === false) {
+            throw aiError('OFFLINE', MSG_NETWORK, { errors });
+          }
+          netFails[c.provider] = (netFails[c.provider] || 0) + 1;
+          if (netFails[c.provider] >= 2) dead.add(c.provider);
+          break;
+        case 'QUOTA':
+          // Crédit épuisé : tout le fournisseur est en cause. Limite du jour : inutile de réessayer ce modèle avant longtemps.
+          if (err.quotaKind === 'credit') { dead.add(c.provider); trip(c, 30 * 60 * 1000, err.code); }
+          else trip(c, err.quotaKind === 'day' && c.provider === 'gemini' ? 30 * 60 * 1000 : err.quotaKind === 'minute' ? Math.max(60000, err.retryAfterMs || 0) : config.breakerMs, err.code);
+          break;
+        case 'SERVER': case 'TIMEOUT':
+          trip(c, config.breakerMs, err.code);
+          break;
+        case 'NOT_FOUND':
+          trip(c, config.notFoundMs, err.code);
+          break;
+        default:
+          break;
+      }
+    };
     for (const c of list) {
-      if (dead.has(c.provider)) continue;
+      if (dead.has(c.provider) || done.has(bk(c))) continue;
       if (tried >= maxTries) break;
       if (tried > 0 && now() - run.start > budget) break;
       if (o.signal && o.signal.aborted) throw abortError();
       tried++;
       const a0 = now();
+      if (live) {
+        const backup = backupFor(c);
+        done.add(bk(c));
+        const res = await race(c, backup, o);
+        if (res.hedged) { done.add(bk(res.hedged)); tried++; }
+        if (o.signal && o.signal.aborted) throw abortError();
+        let win = null;
+        res.outcomes.forEach(x => {
+          if (x.r) { win = x; return; }
+          if (x.loser) {
+            // Battu par l'autre fournisseur sans avoir rien écrit : ce fournisseur passe après pendant un moment.
+            if (x.a.c === c) {
+              const other = res.hedged && res.hedged.provider !== c.provider;
+              list.filter(y => other ? y.provider === c.provider : y === c).forEach(y => trip(y, config.slowMs, 'SLOW'));
+            }
+            return;
+          }
+          if (isAbort(x.e)) return;
+          fail(x.a.c, x.e, x.a.t0);
+        });
+        if (win) {
+          const wc = win.a.c;
+          const r = win.r;
+          const ms = Math.round(now() - run.start);
+          breaker.delete(bk(wc));
+          if (deadKeys[wc.provider]) delete deadKeys[wc.provider];
+          lastOk = { provider: wc.provider, model: wc.model, at: Date.now(), ms };
+          emit('ai:status', { provider: wc.provider, model: wc.model, ok: true, ms: Math.round(now() - win.a.t0), purpose: o.purpose, error: null });
+          return {
+            text: r.text, provider: wc.provider, model: wc.model, ms,
+            firstTokenMs: Math.round((r.firstAt || now()) - run.start),
+            finish: r.finish || null, truncated: !!r.truncated
+          };
+        }
+        continue;
+      }
+      done.add(bk(c));
       try {
         const r = await tryCandidate(c, o);
         const ms = Math.round(now() - run.start);
@@ -924,39 +1149,7 @@
         return out;
       } catch (e) {
         if (isAbort(e) || (o.signal && o.signal.aborted)) throw abortError();
-        const err = (e && e.code) ? e : aiError('HTTP', frMessage('HTTP', c.provider, 0, String((e && e.message) || e)), { provider: c.provider, model: c.model });
-        errors.push(err);
-        emit('ai:status', { provider: c.provider, model: c.model, ok: false, ms: Math.round(now() - a0), purpose: o.purpose, error: err.message, code: err.code });
-        if (err.partialText && (!partial || err.partialText.length > partial.text.length)) {
-          partial = { text: err.partialText, provider: c.provider, model: c.model };
-        }
-        if (err.code === 'KEY' && !err.keyStrong && !forbidden[c.provider]) {
-          forbidden[c.provider] = 1;
-          trip(c, config.notFoundMs, 'FORBIDDEN');
-          continue;
-        }
-        switch (err.code) {
-          case 'KEY':
-            dead.add(c.provider);
-            deadKeys[c.provider] = fingerprint(keyOf(c.provider));
-            emit('ai:keyerror', { provider: c.provider, status: err.status, message: err.message });
-            break;
-          case 'NETWORK':
-            if (typeof navigator !== 'undefined' && navigator && navigator.onLine === false) {
-              throw aiError('OFFLINE', 'Pas de connexion Internet : l\'IA est indisponible (les réponses préparées restent utilisables).', { errors });
-            }
-            netFails[c.provider] = (netFails[c.provider] || 0) + 1;
-            if (netFails[c.provider] >= 2) dead.add(c.provider);
-            break;
-          case 'QUOTA': case 'SERVER': case 'TIMEOUT':
-            trip(c, config.breakerMs, err.code);
-            break;
-          case 'NOT_FOUND':
-            trip(c, config.notFoundMs, err.code);
-            break;
-          default:
-            break;
-        }
+        fail(c, e, a0);
       }
     }
     if (partial && partial.text.trim().length >= 40) {
@@ -1121,7 +1314,7 @@
     opts = opts || {};
     const type = String(mime || (blob && blob.type) || 'application/octet-stream').toLowerCase();
     if (blob && blob.size > 14.5 * 1024 * 1024) {
-      throw aiError('TOO_BIG', 'Fichier trop lourd pour la lecture par l\'IA (14 Mo maximum) — copiez-collez plutôt son texte.');
+      throw aiError('TOO_BIG', 'Fichier trop lourd (14 Mo maximum) : copiez-collez plutôt son texte.');
     }
     const data = await blobToBase64(blob);
     const prompt = 'Recopie intégralement tout le texte de ce document, dans l\'ordre, en conservant la structure (titres, listes, paragraphes ; tableaux ligne par ligne avec « | »). N\'ajoute aucun commentaire ni introduction, ne résume pas, ne traduis pas. Si le document ne contient aucun texte lisible, réponds exactement : [vide]';
@@ -1167,12 +1360,42 @@
   function reset() {
     breaker.clear();
     noThinking.clear();
+    noMinimal.clear();
     Object.keys(deadKeys).forEach(k => { delete deadKeys[k]; });
     lastOk = null;
   }
 
+  // Réchauffage : ouvre à l'avance la connexion (DNS + TLS) vers le fournisseur qui répondra,
+  // pour gagner 100 à 300 ms sur la 1re réponse. À appeler quand l'aide en direct démarre
+  // ou dès que le jury commence à parler. Sans effet hors navigateur ou sans clé.
+  const ORIGIN = { openai: 'https://api.openai.com', gemini: 'https://generativelanguage.googleapis.com', claude: 'https://api.anthropic.com', groq: 'https://api.groq.com' };
+  const warmedAt = {};
+  function warm(purpose, opts) {
+    try {
+      if (!(opts && opts.connectOnly)) maybeAutoDiscover();
+      if (typeof document === 'undefined' || !document.head || !document.createElement) return [];
+      const t = Date.now();
+      const seen = [];
+      pick(purpose || 'live').forEach(c => {
+        if (seen.length >= 2 || !keyOf(c.provider) || seen.indexOf(c.provider) >= 0) return;
+        seen.push(c.provider);
+        const origin = ORIGIN[c.provider];
+        if (!origin || t - (warmedAt[origin] || 0) < config.warmMs) return;
+        warmedAt[origin] = t;
+        const l = document.createElement('link');
+        l.rel = 'preconnect';
+        l.href = origin;
+        l.crossOrigin = 'anonymous';
+        document.head.appendChild(l);
+        setTimeout(() => { try { l.remove(); } catch (e) {  } }, config.warmMs);
+      });
+      return seen;
+    } catch (e) { return []; }
+  }
+
   S.ai = {
-    hasKey, canPeek, discover, pick, generate, transcribe, extractFile, test,
+    hasKey, canPeek, discover, pick, generate, transcribe, extractFile, test, warm,
     config, state, reset, parseJson: parseJsonLoose, cleanTranscript, thinkingFor, FALLBACK
   };
+  if (typeof document !== 'undefined' && typeof setTimeout === 'function') setTimeout(() => { if (hasKey()) warm('live', { connectOnly: true }); }, 1500);
 })(window.AideVisio = window.AideVisio || {});

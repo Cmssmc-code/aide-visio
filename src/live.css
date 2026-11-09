@@ -1,0 +1,198 @@
+/* Aide Visio — Entraînement sur Teams : accueil (import du sujet) et assistant en direct.
+   Chargé après design.css : seules les classes lv-* et l'écran .ex-call sont visées ici. */
+
+/* ---------- 1. Écran de départ : rejoindre, importer, lancer ---------- */
+
+.lv-start-screen .ex-call-intro { max-width: 62ch; line-height: 1.55; }
+.lv-steps { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; max-width: 760px; }
+.lv-step { display: flex; gap: 14px; align-items: flex-start; }
+.lv-step-n {
+  display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 50%;
+  font: 700 15px/1 var(--font); color: var(--accent-text, var(--accent)); background: var(--accent-soft);
+}
+.lv-step.is-main .lv-step-n { color: var(--on-accent, #fff); background: var(--accent-fill, var(--accent)); }
+.lv-step-b { display: grid; gap: 8px; min-width: 0; flex: 1; }
+.lv-step-b .h3 { margin: 4px 0 0; }
+.lv-step-b p { margin: 0; line-height: 1.5; }
+.lv-step-b > .btn { justify-self: start; }
+.lv-step .ex-teams { margin: 0; }
+.lv-jury { margin: 18px 0 0; max-width: 760px; text-align: center; }
+@media (max-width: 559px) {
+  .lv-step { gap: 12px; }
+  .lv-step-b > .btn { justify-self: stretch; justify-content: center; }
+}
+
+/* ---------- 2. Assistant en direct (page, plein écran, fenêtre flottante) ---------- */
+
+.ex-call .lv-stage { margin: 0 auto 16px; width: 100%; max-width: 1100px; padding: 18px 22px 16px; }
+.lv-stage { display: flex; flex-direction: column; gap: 12px; min-height: 0; border: 1px solid var(--sep); }
+.lv-stage.is-on { border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+/* Départ : un seul gros bouton */
+.lv-start { display: grid; justify-items: center; gap: 10px; padding: 14px 4px 6px; text-align: center; }
+.lv-start-ic {
+  display: grid; place-items: center; width: 56px; height: 56px; border-radius: 18px;
+  color: var(--accent-text, var(--accent)); background: var(--accent-soft);
+}
+.lv-start-ic svg.ico { width: 28px; height: 28px; }
+.lv-start-t { margin: 2px 0 0; font: 700 22px/1.2 var(--font-display, var(--font)); letter-spacing: -.01em; }
+.lv-start-p { margin: 0; max-width: 46ch; color: var(--text-2); line-height: 1.5; }
+.lv-go { min-height: 56px; padding-inline: 28px; font-size: 18px; margin-top: 4px; }
+.lv-tip { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 0; color: var(--text-2); font-size: 14px; }
+
+/* État d'écoute */
+.lv-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 32px; }
+.lv-status { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px 4px 10px; border-radius: 999px; background: var(--fill); }
+.lv-status b { font-size: 14px; font-weight: 650; }
+.lv-status.on { background: var(--err-soft); color: var(--err); }
+.lv-status .ex-live-dot { width: 10px; height: 10px; }
+.lv-status .ex-live-dot.on { animation: lv-pulse 1.4s ease-out infinite; }
+@keyframes lv-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--err) 55%, transparent); }
+  100% { box-shadow: 0 0 0 9px transparent; }
+}
+
+.lv-empty { display: grid; gap: 8px; padding: 6px 0; }
+.lv-wait { font-size: 18px; color: var(--text-2); }
+.lv-empty .lv-tip { justify-content: flex-start; }
+
+/* Question (courte), réponse (l'essentiel), traduction et mots clés */
+.lv-l { font: 700 11.5px/1 var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); margin-right: 4px; }
+.ex-live-q.lv-q {
+  margin: 0; padding: 0; background: none; border-radius: 0;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+  color: var(--text-2); line-height: 1.4;
+}
+.lv-q .ex-live-en { display: inline; font: 600 16px/1.4 var(--font); color: var(--text-2); }
+.lv-a { min-height: 0; }
+.ex-live-ans.lv-ans {
+  margin: 0; color: var(--text);
+  font: 650 clamp(24px, calc(1.1rem + 1.5vw), 40px)/1.32 var(--font-display, var(--font));
+  font-size: calc(clamp(24px, calc(1.1rem + 1.5vw), 40px) * var(--font-scale, 1));
+  letter-spacing: -.005em; max-width: 34em; text-wrap: pretty;
+}
+.lv-sub { display: grid; gap: 8px; }
+.lv-fr { margin: 0; color: var(--text-2); font-size: 15px; line-height: 1.45; }
+.lv-fr .ex-live-fr { display: inline; margin: 0; font-size: inherit; }
+.lv-kw { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.lv-kw .pill { font-size: 14px; }
+/* Mot-clé : expression anglaise, traduction française dessous */
+.lv-kw .lv-kw-i { display: inline-grid; gap: 1px; height: auto; min-height: 26px; padding: 5px 12px; border-radius: 12px; line-height: 1.2; text-align: left; white-space: normal; }
+.lv-kw-i b { font-weight: 650; color: var(--text); }
+.lv-kw-fr { font-size: .86em; font-weight: 500; color: var(--text-2); }
+.lv-stage .ex-live-err { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--err-soft); color: var(--err); font-weight: 600; line-height: 1.4; text-align: left; }
+.lv-stage .ex-live-err > span { flex: 1 1 220px; }
+.lv-stage .ex-live-err > .lv-err-btns { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 8px; }
+.lv-start .ex-live-err { max-width: 560px; }
+.lv-warn { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; border-radius: 12px; background: var(--warn-soft); color: var(--warn); font-weight: 600; line-height: 1.4; }
+.lv-esc { font-size: 14px; color: var(--text-3); }
+.lv-tools { margin-top: 2px; }
+.lv-interim { font-size: 14px; }
+
+/* Plein écran (PC) : réponse en haut au centre, juste sous la caméra */
+.lv-stage:fullscreen {
+  max-width: none; margin: 0; border: 0; border-radius: 0; box-shadow: none;
+  padding: 3vh 6vw 3vh; gap: 2vh; background: var(--bg-elev, var(--bg)); color: var(--text);
+  overflow: hidden;
+}
+.lv-stage:fullscreen > * { width: 100%; max-width: 1200px; margin-inline: auto; }
+.lv-stage:fullscreen .lv-a { flex: 1 1 auto; overflow: hidden; }
+.lv-stage:fullscreen .lv-ans { max-width: none; text-align: center; }
+.lv-stage:fullscreen .lv-q, .lv-stage:fullscreen .lv-al { text-align: center; }
+.lv-stage:fullscreen .lv-q .ex-live-en { font-size: 20px; }
+.lv-stage:fullscreen .lv-sub { justify-items: center; text-align: center; }
+.lv-stage:fullscreen .lv-fr { font-size: 18px; }
+.lv-stage:fullscreen .lv-head, .lv-stage:fullscreen .lv-tools { justify-content: center; }
+.lv-stage:fullscreen .lv-head .spacer { display: none; }
+.lv-stage::backdrop { background: var(--bg, #000); }
+
+/* Fenêtre flottante (Document Picture-in-Picture ou pop-up), en paysage */
+.pip-body.lv-float-body { height: 100vh; min-height: 0; overflow: hidden; }
+.lv-float { box-sizing: border-box; height: 100vh; padding: 10px 14px 10px; }
+.ex-float .lv-stage.lv-fit { height: 100%; gap: 6px; border: 0; padding: 0; background: none; box-shadow: none; }
+.lv-fit .lv-head { min-height: 32px; flex-wrap: nowrap; }
+.lv-fit .lv-status { padding: 2px 10px 2px 8px; }
+.lv-fit .lv-status b { font-size: 14px; }
+.lv-fit .lv-q { -webkit-line-clamp: 1; line-clamp: 1; font-size: 14px; }
+.lv-fit .lv-q .ex-live-en { font-size: 16px; }
+.lv-fit .lv-a { flex: 1 1 auto; overflow: hidden; display: flex; flex-direction: column; justify-content: safe center; }
+.lv-al { display: block; margin-bottom: 4px; color: var(--accent-text, var(--accent)); }
+.lv-kw { align-items: center; }
+.lv-fit .lv-ans { max-width: none; font-size: 34px; line-height: 1.25; }
+.lv-fit .lv-sub { gap: 4px; }
+.lv-fit .lv-fr { font-size: 15px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; line-clamp: 1; overflow: hidden; }
+.lv-fit .lv-kw { flex-wrap: nowrap; overflow: hidden; gap: 5px; }
+.lv-fit .lv-kw .pill { font-size: 14.5px; white-space: nowrap; }
+/* Fenêtre : expression et traduction sur une seule ligne, pour laisser la place à la réponse */
+.lv-fit .lv-kw .lv-kw-i { display: inline-flex; align-items: baseline; gap: 6px; padding: 3px 10px; border-radius: 10px; white-space: nowrap; }
+.lv-fit .lv-kw-fr { font-size: .92em; }
+.lv-fit .lv-kw-fr::before { content: "·"; margin-right: 6px; color: var(--text-3); }
+.lv-fit .lv-al { display: none; }
+.lv-fit .lv-warn, .lv-fit .lv-tip { padding: 4px 10px; font-size: 13px; }
+.lv-fit .lv-err-btns .btn { min-height: 28px; padding: 0 10px; font-size: 13px; }
+.lv-fit .lv-tools { gap: 6px; flex-wrap: nowrap; margin: 0; }
+.lv-fit .lv-head .lv-tools .btn { min-height: 32px; padding: 0 12px; font-size: 14px; }
+.lv-fit .lv-tools .btn { min-height: 30px; padding: 0 10px; font-size: 13px; }
+.lv-fit .ex-live-err { padding: 6px 10px; font-size: 13px; }
+.lv-fit .lv-empty { flex: 1 1 auto; align-content: center; text-align: center; }
+.lv-fit .lv-wait { font-size: 20px; }
+.lv-fit .lv-interim { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13.5px; margin: 0; }
+
+/* ---------- 3. Mise en page de l'écran d'appel ---------- */
+
+/* Par défaut (tablette, téléphone) : aides en haut, puis les cartes les unes sous les autres. */
+.ex-call .lv-body { display: flex; flex-direction: column; gap: 14px; max-width: 1100px; margin-inline: auto; }
+.ex-call .lv-body > .lv-stage { margin: 0; max-width: none; order: 0; }
+.ex-call .lv-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.ex-call .lv-side > .card { margin: 0 !important; }
+@media (min-width: 760px) and (max-width: 1099px) {
+  .ex-call .lv-side { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+  .ex-call .lv-side > .ex-call-hist { grid-column: 1 / -1; }
+}
+
+/* PC (≥ 1100 px, écran 1536 × 830) : tout tient sans défiler.
+   Aides en grand à gauche ; à droite une colonne qui défile seule. */
+@media (min-width: 1100px) and (min-height: 600px) {
+  body.ex-focus .view:has(.ex-call) { padding-bottom: 14px; }
+  .screen.ex-call {
+    max-width: 1480px; display: flex; flex-direction: column;
+    height: calc(100dvh - 18px - var(--titlebar-h, 0px) - var(--safe-top, 0px) - 14px);
+  }
+  .ex-call > .lv-body {
+    flex: 1 1 auto; min-height: 0; max-width: none; width: 100%;
+    display: grid; grid-template-columns: minmax(0, 1fr) clamp(360px, 29vw, 440px); gap: 18px;
+  }
+  .ex-call .lv-stage { height: 100%; overflow: hidden; padding: 22px 30px 18px; gap: 14px; }
+  /* Réponse en haut, au plus près de la caméra ; traduction et mots-clés en bas. */
+  .ex-call .lv-stage .lv-a { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-start; padding-top: 6px; }
+  .ex-call .lv-stage .lv-ans { max-width: none; line-height: 1.25; }
+  .ex-call .lv-stage > .lv-start { margin: auto 0; gap: 14px; }
+  .ex-call .lv-stage > .lv-empty { flex: 1 1 auto; align-content: center; justify-items: center; text-align: center; }
+  .ex-call .lv-stage > .lv-empty .lv-tip { justify-content: center; }
+  .ex-call .lv-stage .lv-wait { font-size: 22px; }
+  .ex-call .lv-q .ex-live-en { font-size: 18px; }
+  .ex-call .lv-fr { font-size: 16.5px; }
+  .ex-call .lv-kw .pill { font-size: 15px; }
+  .ex-call .lv-start-t { font-size: 26px; }
+  .ex-call .lv-start-p { font-size: 17px; }
+  .ex-call .lv-go { min-height: 64px; padding-inline: 36px; font-size: 20px; }
+  .ex-call .lv-side {
+    min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable;
+    padding: 0 4px 12px 0; border-radius: var(--r-lg, 20px);
+  }
+  .ex-call .lv-side .ex-src { grid-template-columns: minmax(0, 1fr); }
+  .ex-call .lv-side .ex-call-subject .ex-paper { max-height: 340px; overflow-y: auto; }
+}
+@media (max-width: 559px) {
+  .ex-call .lv-stage { padding: 14px 14px 12px; margin-bottom: 14px; }
+  .lv-go { width: 100%; justify-content: center; }
+  .lv-tools .btn { flex: 1 1 auto; justify-content: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lv-status .ex-live-dot.on { animation: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--err) 30%, transparent); }
+  .lv-ans.is-streaming::after { animation: none; }
+}
+@media (forced-colors: active) {
+  .lv-status, .lv-stage .ex-live-err { border: 1px solid CanvasText; }
+}

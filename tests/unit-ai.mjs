@@ -139,7 +139,9 @@ test('pick : ordre de repli (Gemini puis Claude), réglage fournisseur, sans cl�
   const firstClaude = a.findIndex(c => c.provider === 'claude');
   assert.ok(firstClaude > 0 && a.slice(firstClaude).every(c => c.provider === 'claude'));
   assert.equal(a[firstClaude].model, 'claude-haiku-5-5');
-  assert.equal(ai.pick('fast')[0].model, 'gemini-flash-lite-latest');
+  assert.equal(ai.pick('fast')[0].model, 'gemini-3.5-flash-lite');
+  assert.equal(ai.pick('live')[0].model, 'gemini-3.5-flash-lite', 'aide en direct : Flash-Lite en tête');
+  assert.equal(ai.pick('live').find(c => c.provider === 'claude').model, 'claude-haiku-5-5');
   const prep = ai.pick('prep');
   assert.equal(prep.find(c => c.provider === 'claude').model, 'claude-sonnet-5-5');
   env.settings.provider = 'claude';
@@ -151,6 +153,8 @@ test('pick : ordre de repli (Gemini puis Claude), réglage fournisseur, sans cl�
   assert.equal(noKey.ai.hasKey(), false);
   assert.ok(noKey.ai.pick('answer').length > 0);
   assert.deepEqual(JSON.parse(JSON.stringify(ai.thinkingFor('gemini-3-flash-preview'))), { thinkingLevel: 'low' });
+  assert.deepEqual(JSON.parse(JSON.stringify(ai.thinkingFor('gemini-3.5-flash-lite', 'live'))), { thinkingLevel: 'minimal' });
+  assert.deepEqual(JSON.parse(JSON.stringify(ai.thinkingFor('gemini-3.1-pro', 'fast'))), { thinkingLevel: 'low' }, 'Pro : jamais minimal');
   assert.deepEqual(JSON.parse(JSON.stringify(ai.thinkingFor('gemini-2.5-flash'))), { thinkingBudget: 0 });
   assert.equal(ai.thinkingFor('gemini-flash-latest'), null);
 });
@@ -230,7 +234,7 @@ test('429 → bascule sur le modèle suivant + circuit breaker 5 min', async () 
   const st = env.events.filter(e => e.type === 'ai:status');
   assert.equal(st[0].ok, false);
   assert.equal(st[0].model, 'gemini-3.8-flash');
-  assert.match(st[0].error, /Quota Gemini atteint/);
+  assert.equal(st[0].error, 'Limite gratuite de Gemini atteinte pour aujourd\'hui. Réessayez demain ou ajoutez une clé OpenAI.');
   assert.equal(st[1].ok, true);
   assert.ok(env.ai.state().breaker.some(b => b.model === 'gemini-3.8-flash'));
   env.calls.length = 0;
@@ -288,6 +292,7 @@ test('Groq : gros modèles seulement, flux SSE OpenAI, Whisper prioritaire pour 
   const env = makeEnv({ groqKey: 'gsk-test' });
   const picked = env.ai.pick('answer').filter(c => c.provider === 'groq').map(c => c.model);
   assert.ok(picked.length && picked.every(m => !/instant|8b|whisper|guard/.test(m)), 'aucun petit modèle : ' + picked);
+  assert.equal(picked[0], 'openai/gpt-oss-120b', 'gpt-oss-120b en tête : ' + picked);
   const chunk = t => 'data: ' + JSON.stringify({ choices: [{ index: 0, delta: { content: t } }] }) + '\n\n';
   env.handler = (c) => {
     if (c.url.endsWith('/audio/transcriptions')) return new Response(JSON.stringify({ text: ' Pourquoi le Recho ? ' }), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -474,7 +479,8 @@ test('transcribe : WAV inline, Gemini uniquement (fast), filtre d\'hallucination
   assert.equal(a.text, '');
   const c = env.calls[0];
   assert.ok(isGemini(c));
-  assert.equal(modelOf(c), 'gemini-flash-lite-latest');
+  assert.equal(modelOf(c), 'gemini-3.5-flash-lite');
+  assert.equal(c.body.generationConfig.thinkingConfig.thinkingLevel, 'minimal', 'transcription : réflexion minimale');
   const part = c.body.contents[0].parts[0].inline_data;
   assert.equal(part.mime_type, 'audio/wav');
   assert.equal(part.data, Buffer.from([82, 73, 70, 70, 1, 2, 3, 250, 251]).toString('base64'));
@@ -584,6 +590,108 @@ test('découverte automatique en arrière-plan au 1er appel (non bloquante)', as
   const cache = JSON.parse(env.ctx.localStorage.getItem('aidevisio.models.v2'));
   assert.deepEqual(cache.gemini.ids, ['gemini-2.5-flash']);
   assert.ok(!JSON.stringify(cache).includes('g-key'), 'la clé n\'est jamais stockée dans le cache');
+});
+
+test('aide en direct : détectée, Flash-Lite + réflexion minimale, pas de relance si tronquée', async () => {
+  const env = makeEnv({ geminiKey: 'g-key' });
+  env.handler = () => bytesResponse(gEvent('I think ') + gEvent('so, because', { finishReason: 'MAX_TOKENS' }));
+  const deltas = [];
+  const r = await env.ai.generate({ purpose: 'answer', stream: true, onDelta: t => deltas.push(t), prompt: 'Q', maxTokens: 400, timeoutMs: 15000 });
+  assert.equal(r.text, 'I think so, because');
+  assert.equal(r.truncated, true);
+  assert.equal(env.calls.length, 1, 'aucun 2e appel');
+  const g = env.calls[0].body.generationConfig;
+  assert.equal(modelOf(env.calls[0]), 'gemini-3.5-flash-lite');
+  assert.equal(g.thinkingConfig.thinkingLevel, 'minimal');
+  assert.ok(g.maxOutputTokens <= 400 + 1024, 'sortie courte (' + g.maxOutputTokens + ')');
+  assert.deepEqual(deltas, ['I think ', 'I think so, because']);
+});
+
+test('aide en direct : « minimal » refusé → même modèle en « low », mémorisé', async () => {
+  const env = makeEnv({ geminiKey: 'g-key' });
+  env.handler = (c) => c.body.generationConfig.thinkingConfig.thinkingLevel === 'minimal'
+    ? err(400, 'thinking_level "minimal" is not supported for this model', { status: 'INVALID_ARGUMENT' })
+    : geminiSSE(['OK low']);
+  const r = await env.ai.generate({ purpose: 'live', stream: true, prompt: 'Q', maxTokens: 300 });
+  assert.equal(r.text, 'OK low');
+  assert.equal(env.calls.length, 2);
+  assert.equal(modelOf(env.calls[1]), modelOf(env.calls[0]));
+  assert.equal(env.calls[1].body.generationConfig.thinkingConfig.thinkingLevel, 'low');
+  env.calls.length = 0;
+  await env.ai.generate({ purpose: 'live', stream: true, prompt: 'Q2', maxTokens: 300 });
+  assert.equal(env.calls.length, 1, 'plus d\'essai en « minimal » ensuite');
+});
+
+test('aide en direct : 1er modèle muet → 2e fournisseur lancé en parallèle, le 1er qui écrit gagne', async () => {
+  const env = makeEnv({ geminiKey: 'g-key', claudeKey: 'c-key' });
+  env.ai.config.hedgeMs = 80;
+  let geminiSignal = null;
+  env.handler = (c) => {
+    if (isGemini(c)) { geminiSignal = c.signal; return bytesResponse('', { hangAfter: true }); }
+    return claudeSSE(['Good ', 'question.'], { delay: 5 });
+  };
+  const deltas = [];
+  const t0 = Date.now();
+  const r = await env.ai.generate({ purpose: 'answer', stream: true, onDelta: t => deltas.push(t), prompt: 'Q', maxTokens: 400, timeoutMs: 15000 });
+  assert.ok(Date.now() - t0 < 2000, 'réponse rapide malgré le 1er modèle muet');
+  assert.equal(r.provider, 'claude');
+  assert.equal(r.text, 'Good question.');
+  assert.equal(deltas.at(-1), 'Good question.');
+  assert.ok(geminiSignal && geminiSignal.aborted, 'le modèle muet est annulé');
+  assert.equal(env.calls.filter(isGemini).length, 1);
+  assert.equal(env.calls.filter(isClaude).length, 1, 'un seul appel de secours');
+  assert.ok(env.ai.state().breaker.some(b => b.provider === 'gemini' && b.code === 'SLOW'), 'le lent passe après la prochaine fois');
+  env.calls.length = 0;
+  env.handler = (c) => isGemini(c) ? geminiSSE(['G']) : claudeSSE(['C']);
+  const r2 = await env.ai.generate({ purpose: 'live', stream: true, prompt: 'Q2', maxTokens: 300 });
+  assert.equal(r2.provider, 'claude', 'le fournisseur rapide passe devant');
+});
+
+test('aide en direct : réponse rapide → aucun appel en parallèle ; annulation → AbortError', async () => {
+  const env = makeEnv({ geminiKey: 'g-key', claudeKey: 'c-key' });
+  env.ai.config.hedgeMs = 150;
+  env.handler = (c) => isGemini(c) ? geminiSSE(['Fast ', 'answer.'], { delay: 30, chunk: 4096 }) : claudeSSE(['Never']);
+  const r = await env.ai.generate({ purpose: 'live', stream: true, prompt: 'Q', maxTokens: 300 });
+  assert.equal(r.text, 'Fast answer.');
+  await sleep(200);
+  assert.equal(env.calls.filter(isClaude).length, 0, 'pas d\'appel en double');
+  const ctrl = new AbortController();
+  env.handler = () => bytesResponse('', { hangAfter: true });
+  const p = env.ai.generate({ purpose: 'live', stream: true, prompt: 'Q', maxTokens: 300, signal: ctrl.signal });
+  setTimeout(() => ctrl.abort(), 30);
+  await assert.rejects(p, e => e.name === 'AbortError');
+});
+
+test('messages d\'erreur simples, sans code HTTP ; ALL_FAILED garde une seule cause', async () => {
+  const k = makeEnv({ geminiKey: 'bad' });
+  k.handler = () => err(400, 'API key not valid. Please pass a valid API key.', { details: [{ reason: 'API_KEY_INVALID' }] });
+  await assert.rejects(k.ai.generate({ prompt: 'Q' }), e => e.code === 'KEY' && e.message === 'Clé Gemini refusée : recopiez-la en entier dans Réglages.');
+  const nf = makeEnv({ geminiKey: 'g' });
+  nf.handler = () => err(404, 'models/x is not found');
+  await assert.rejects(nf.ai.generate({ prompt: 'Q' }), e => e.message === 'L\'IA ne répond plus à cette adresse. Mettez à jour l\'appli.');
+  const net = makeEnv({ geminiKey: 'g' });
+  net.handler = () => { throw new TypeError('Failed to fetch'); };
+  await assert.rejects(net.ai.generate({ prompt: 'Q' }), e => e.message === 'Pas de connexion Internet : vérifiez le Wi-Fi puis réessayez.');
+  const mix = makeEnv({ geminiKey: 'g', claudeKey: 'c' });
+  mix.handler = (c) => isGemini(c) ? err(503, 'overloaded') : err(404, 'not found');
+  await assert.rejects(mix.ai.generate({ prompt: 'Q' }), e => e.code === 'ALL_FAILED' && e.message === 'L\'IA ne répond plus à cette adresse. Mettez à jour l\'appli.' && !/\d{3}|·/.test(e.message));
+  const q = makeEnv({ geminiKey: 'g', openaiKey: 'sk' });
+  q.handler = (c) => c.url.startsWith('https://api.openai.com/')
+    ? json({ error: { message: 'You exceeded your current quota, please check your plan and billing details.', type: 'insufficient_quota' } }, 429)
+    : err(429, 'Quota exceeded for metric generate_content_free_tier_requests', { details: [{ violations: [{ quotaId: 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier' }] }] });
+  await assert.rejects(q.ai.generate({ prompt: 'Q' }), e => e.code === 'QUOTA' && /^Crédit OpenAI épuisé/.test(e.message));
+  assert.equal(q.calls.filter(c => c.url.startsWith('https://api.openai.com/')).length, 1, 'crédit épuisé : un seul essai OpenAI');
+  const st = q.events.find(e => e.type === 'ai:status' && e.provider === 'gemini');
+  assert.match(st.error, /^Trop de demandes envoyées à Gemini/);
+});
+
+test('Groq : gpt-oss-20b gardé en secours rapide, Llama 3.3 en dernier ; warm() sans navigateur', async () => {
+  const env = makeEnv({ groqKey: 'gsk' });
+  env.handler = () => json({ data: ['llama-3.3-70b-versatile', 'openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'llama-3.1-8b-instant', 'whisper-large-v3'].map(id => ({ id, active: true })) });
+  await env.ai.discover({});
+  const g = env.ai.pick('answer').map(c => c.model);
+  assert.deepEqual(Array.from(g), ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'llama-3.3-70b-versatile']);
+  assert.deepEqual(Array.from(env.ai.warm('live')), []);
 });
 
 const PER_TEST_MS = 10000;

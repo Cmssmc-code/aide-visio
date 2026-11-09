@@ -48,8 +48,8 @@ for (const s of subs || []) {
 check(new Set((subs || []).map((s) => s.theme)).size === 7, 'les 7 thèmes couverts');
 
 const F = S.examFiches || {};
-check(F.exam && isStr(F.exam.date) && isStr(F.exam.title) && isStr(F.exam.mode) && Array.isArray(F.exam.format) && F.exam.format.every((x) => isStr(x.label) && typeof x.minutes === 'number'), 'fiches.exam');
-check(F.exam && F.exam.date === '2026-11-12T10:00', 'date de l’oral');
+check(F.exam && Array.isArray(F.exam.format) && F.exam.format.length === 3 && F.exam.format.every((x) => isStr(x.label) && typeof x.minutes === 'number'), 'fiches.exam.format');
+check(F.exam && !('date' in F.exam), 'pas de date d’examen');
 check(Array.isArray(F.method) && F.method.length >= 8 && F.method.every((m) => isStr(m.id) && isStr(m.title) && (m.minutes === null || typeof m.minutes === 'number') && isStr(m.goal) && Array.isArray(m.tips) && Array.isArray(m.phrases)), 'fiches.method');
 check(Array.isArray(F.phrases) && F.phrases.length >= 10 && F.phrases.every((b) => isStr(b.id) && isStr(b.title) && pairs(b.items) && b.items.length), 'fiches.phrases');
 check(pairs(F.tones) && F.tones.length >= 10, 'fiches.tones');

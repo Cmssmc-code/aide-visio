@@ -68,7 +68,8 @@
 .st-link { color: var(--accent-text, var(--sc-accent)); text-decoration: none; font-weight: 600; }
 .st-link:hover { text-decoration: underline; }
 
-.st select {
+.st select,
+.dg select {
   appearance: none;
   -webkit-appearance: none;
   flex: none;
@@ -84,6 +85,7 @@
   text-overflow: ellipsis;
   cursor: pointer;
 }
+.dg select:focus,
 .st select:focus { outline: none; border-color: var(--sc-accent); box-shadow: 0 0 0 4px var(--accent-ring, color-mix(in srgb, var(--sc-accent) 22%, transparent)); }
 
 .st-range-ctl { display: flex; align-items: center; gap: 10px; flex: none; }
@@ -192,3 +194,32 @@
 
 .secret-input { -webkit-text-security: disc; text-security: disc; font-family: var(--font); letter-spacing: .08em; }
 
+/* Réglages : données et gros boutons */
+.st-big { padding-block: 16px; }
+.st-data { display: flex; flex-wrap: wrap; gap: 10px; padding: 6px 16px 4px; }
+.st-data .btn { flex: 1 1 180px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.st-data .btn svg { width: 18px; height: 18px; }
+.st-danger-btn { color: var(--sc-err); }
+.st-data-note { margin: 0; padding: 10px 16px 14px; line-height: 1.45; }
+
+/* Vérifier mon PC */
+.dg-summary { flex-wrap: wrap; }
+.dg-summary .dg-advice { margin-top: 10px; }
+.dg-all { flex: none; display: inline-flex; align-items: center; gap: 8px; min-width: 200px; justify-content: center; }
+.dg-all svg { width: 18px; height: 18px; }
+.dg-list .list-row.dg-row { padding-block: 16px; }
+.dg-title { display: flex; align-items: center; gap: 8px; font-size: 16px; }
+.dg-title svg { flex: none; width: 18px; height: 18px; opacity: .7; }
+.dg-ctl { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-top: 12px; }
+.dg-ctl .btn { height: 44px; }
+.dg-pick { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.dg .dg-pick select { height: 44px; max-width: min(100%, 420px); }
+.dg-badge.is-ask { background: var(--sc-accent); }
+.dg-row.is-ask .dg-detail { opacity: 1; font-weight: 600; }
+.dg-media { margin-top: 12px; }
+.dg-media video { display: block; width: min(100%, 420px); aspect-ratio: 16 / 9; object-fit: cover; border-radius: 14px; background: #000; transform: scaleX(-1); }
+.dg-row.is-pending .dg-detail { opacity: 1; }
+
+@media (max-width: 640px) {
+  .dg-all { width: 100%; }
+}

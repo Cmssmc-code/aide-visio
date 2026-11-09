@@ -369,7 +369,7 @@ test('liveAnswer : prompt (sujet, question d’examen, mots du jury), flux sans 
   const r = await env.x.liveAnswer({ subject: SUBJECT, question: 'so what do you think about tariffs', expose: 'Today I am going to present an article about the AI bubble.', turns: TURNS, onDelta: t => deltas.push(t) });
   const c = env.calls[0];
   assert.equal(env.calls.length, 1);
-  assert.equal(c.purpose, 'answer');
+  assert.equal(c.purpose, 'live');
   assert.equal(c.stream, true);
   assert.equal(c.temperature, 0.5);
   assert.equal(c.maxTokens, 400);
@@ -379,9 +379,10 @@ test('liveAnswer : prompt (sujet, question d’examen, mots du jury), flux sans 
   assert.match(c.prompt, /To what extent should investors worry about an AI bubble\?/, 'question d’examen');
   assert.match(c.prompt, /so what do you think about tariffs/, 'mots du jury');
   assert.match(c.prompt, /present an article about the AI bubble/, 'exposé');
-  assert.match(c.prompt, /marker-2-end/);
+  assert.match(c.prompt, /marker-6-end/);
   assert.match(c.prompt, /marker-11-end/);
-  assert.doesNotMatch(c.prompt, /marker-[01]-end/, '10 derniers échanges seulement');
+  assert.doesNotMatch(c.prompt, /marker-[0-5]-end/, '6 derniers échanges seulement (contexte réduit)');
+  assert.match(c.system, /Keywords: expression \(traduction française\)/, 'mots-clés avec traduction');
   assert.match(c.system, /TRAINING/);
   assert.match(c.system, /90 words/);
   assert.match(c.system, /exactly "—"/);
@@ -401,6 +402,10 @@ test('liveAnswer : réponse nettoyée (préambule, gras, guillemets) et mots-cl�
   assert.deepEqual(r.keyWords, ['stretched valuations', 'to some extent', 'bubble']);
   const split = plain(env.x._internal.splitLive('Firms will suffer.\nKeyw'));
   assert.deepEqual(split, { text: 'Firms will suffer.', keyWords: [] }, 'ligne « Keywords » en cours masquée');
+  const fr = plain(env.x._internal.splitLive('Firms will suffer.\nKeywords: supply chain (chaîne d’approvisionnement); to pass on — répercuter; trade war = guerre commerciale; tariffs (droits de douane, taxes)'));
+  assert.deepEqual(fr.keyWords, ['supply chain (chaîne d’approvisionnement)', 'to pass on (répercuter)', 'trade war (guerre commerciale)', 'tariffs (droits de douane, taxes)'], 'traduction FR de chaque mot-clé');
+  const comma = plain(env.x._internal.splitLive('Yes.\nKeywords: tariffs (droits de douane, taxes), bubble (bulle)'));
+  assert.deepEqual(comma.keyWords, ['tariffs (droits de douane, taxes)', 'bubble (bulle)'], 'virgules entre parenthèses conservées');
 });
 
 test('liveAnswer : « — » (pas une question) → skip, rien d’affiché', async () => {
@@ -452,7 +457,6 @@ const JURY_REPLY = { expect: 'Définir les droits de douane, donner un effet sur
 
 test('juryAnswer : JSON valide, purpose answer, côté jury ', async () => {
   const env = makeEnv({ replies: [JURY_REPLY] });
-  env.S.examLock = { check: async () => ({ open: false }) };
   const r = await env.x.juryAnswer({ subject: SUBJECT, question: 'What do you think about tariffs?', expose: 'I think Nvidia is overvalued.', turns: TURNS });
   const c = env.calls[0];
   assert.equal(c.purpose, 'answer');

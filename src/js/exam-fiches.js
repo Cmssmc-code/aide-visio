@@ -4,9 +4,6 @@
   S.examFiches = {
 
     exam: {
-      date: "2026-11-12T10:00",
-      title: "Oral d'anglais des affaires — UE 218",
-      mode: "À distance (Teams)",
       format: [
         { label: "Préparation", minutes: 60, detail: "Un article de presse anglo-saxonne + une question. Aucun dictionnaire, aucun document autre que le sujet. Notes en mots-clés." },
         { label: "Exposé", minutes: 15, detail: "Seule, sans interruption : introduction, synthèse, transition, problématique, commentaire en 2-3 axes, conclusion. Moins de 10 min (ou commentaire < 5 min) est pénalisé." },

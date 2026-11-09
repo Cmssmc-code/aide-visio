@@ -190,7 +190,7 @@
   async function call(opts) {
     checkAbort(opts.signal);
     if (!S.ai || typeof S.ai.generate !== 'function') throw err('NO_AI', 'Le module IA n\'est pas chargé.');
-    if (!ready()) throw err('NO_KEY', 'Aucune clé IA configurée — ajoutez une clé OpenAI, Gemini (gratuite) ou Claude dans les réglages.');
+    if (!ready()) throw err('NO_KEY', 'Aucune clé IA : ajoutez une clé Gemini (gratuite) ou OpenAI dans Réglages.');
     let r;
     try {
       r = await S.ai.generate(Object.assign({ stream: false }, opts));
@@ -568,9 +568,9 @@
       'CANDIDATE\'S ANSWER (automatic transcript): ' + clipMiddle(answer, 3000, 1000),
       '',
       'Score the answer out of 10 at B2 level (relevance to the question, development and examples, interaction quality, language). 5 = understandable but short or vague; 7 = relevant, developed, few errors; 9-10 = excellent.',
-      'Return ONLY JSON: {"score": 0-10, "good": ["point fort, en français"], "fixes": [{"said": "exact words", "better": "correction", "rule": "règle en français"}], "better": "model B2 answer in English, 3-5 sentences, reusing the candidate\'s ideas"}'
+      'Return ONLY JSON: {"score": 0-10, "good": ["point fort, en français"], "fixes": [{"said": "exact words", "better": "correction", "rule": "règle en français"}], "better": "model B2 answer in English, 3-4 sentences, short and easy to say aloud, reusing the candidate\'s ideas"}'
     ].join('\n');
-    return callJson({ purpose: 'answer', system, prompt, maxTokens: 1200, temperature: 0.3, timeoutMs: 30000, budgetMs: 60000, signal: o.signal }, (d) => {
+    return callJson({ purpose: 'answer', system, prompt, maxTokens: 900, temperature: 0.3, timeoutMs: 30000, budgetMs: 60000, signal: o.signal }, (d) => {
       const better = str(pick(d, ['better', 'model', 'modelAnswer']), 1500);
       const good = list(pick(d, ['good', 'strengths']), 4, 300);
       const fixes = normErrors(pick(d, ['fixes', 'errors', 'corrections']), 8);
@@ -767,15 +767,25 @@
     return t.replace(/\s*\n\s*/g, ' ').replace(/[ \t]{2,}/g, ' ').trim();
   }
 
+  // Mots-clés « expression (traduction FR) » : la traduction reste entre parenthèses
+  // (« supply chain (chaîne d'approvisionnement) »), quel que soit le séparateur
+  // employé par le modèle (« — », « = », « : », « → »). Les virgules dans les
+  // parenthèses ne coupent pas la liste.
+  function kwOne(x) {
+    let k = x.replace(/^[\s"“”'‘’.\-–—]+|[\s"“”'‘’.,;]+$/g, '');
+    const sep = k.match(/^([^()]+?)\s+(?:[—–=:→]|->)\s+([^()]+)$/);
+    if (sep) k = sep[1].trim() + ' (' + sep[2].trim() + ')';
+    return k.replace(/\s*\(\s*/, ' (').replace(/\s*\)\s*$/, ')').replace(/\s*\(\)$/, '');
+  }
   function kwList(s) {
     const t = String(s || '').replace(/[*`]+|__/g, '').trim();
     if (!t) return [];
     const seen = new Set();
     const out = [];
-    t.split(/[;\n•|]/.test(t) ? /\s*[;\n•|]\s*/ : /\s*,\s*/).forEach(x => {
-      const k = x.replace(/^[\s"“”'‘’.\-–—]+|[\s"“”'‘’.,;]+$/g, '');
-      const low = k.toLowerCase();
-      if (!k || k.length > 80 || /^(?:none|n\/a)$/.test(low) || seen.has(low)) return;
+    t.split(/[;\n•|]/.test(t) ? /\s*[;\n•|]\s*/ : /\s*,\s*(?![^()]*\))/).forEach(x => {
+      const k = kwOne(x);
+      const low = k.toLowerCase().replace(/\s*\(.*$/, '');
+      if (!k || k.length > 120 || /^(?:none|n\/a)$/.test(low) || seen.has(low)) return;
       seen.add(low);
       out.push(k);
     });
@@ -801,8 +811,9 @@
     const o = opts || {};
     const question = str(o.question, 1500);
     if (!question) throw err('NO_QUESTION', 'Aucune question du jury à traiter.');
-    const expose = clipMiddle(transcriptText(o.expose), 2500, 1500);
-    const turns = interviewText((Array.isArray(o.turns) ? o.turns : []).slice(-10), 3000);
+    // Contexte réduit : la 1re réponse doit arriver en 1 à 2 s pendant l'appel.
+    const expose = clipMiddle(transcriptText(o.expose), 1200, 600);
+    const turns = interviewText((Array.isArray(o.turns) ? o.turns : []).slice(-6), 1200);
     const size = o.shorter ? '2 short sentences, 40 words maximum' : '3-5 short sentences, 90 words maximum';
     const system = [
       'You are the candidate\'s English coach during a TRAINING mock oral for the French accounting diploma (DSCG UE6 / DSGC UE 218, business English, CEFR level B2 expected). The candidate has studied a press article and an exam question, has given a presentation, and is now questioned by the jury.',
@@ -813,11 +824,11 @@
       'No markdown, no list, no quotes, no preamble: only the words to say.',
       'The jury\'s words come from automatic speech recognition: if some words are wrong or missing, answer the most likely intended question.',
       'If the jury\'s words are not a question or a request addressed to the candidate (greeting, sound check, thanks, instructions, small talk), output exactly "—" and nothing else.',
-      'After the answer, you may add one last line: "Keywords: expression 1; expression 2; expression 3" (3-5 useful English expressions for this answer).',
+      'After the answer, you may add one last line: "Keywords: expression (traduction française); expression (traduction française); expression (traduction française)" (3-5 useful English expressions for this answer, each followed by its short French translation in brackets).',
       'Usable recent news (2025-2026), only if relevant: ' + NEWS.join(' ')
     ].join('\n');
     const prompt = [
-      subjectBrief(o.subject, { textMax: 3500 }),
+      subjectBrief(o.subject, { textMax: 1500 }),
       expose ? 'CANDIDATE\'S PRESENTATION (automatic transcript, may contain errors):\n' + expose : '',
       turns ? 'RECENT EXCHANGE (automatic transcript, may contain errors):\n' + turns : '',
       'JURY\'S WORDS JUST NOW (automatic transcript, may contain errors): ' + question,
@@ -834,7 +845,7 @@
       shown = out;
       try { o.onDelta(out); } catch (e) {  }
     };
-    const r = await call({ purpose: 'answer', stream: true, onDelta, system, prompt, temperature: 0.5, maxTokens: 400, timeoutMs: 15000, budgetMs: 30000, signal: o.signal });
+    const r = await call({ purpose: 'live', stream: true, onDelta, system, prompt, temperature: 0.5, maxTokens: 400, timeoutMs: 15000, budgetMs: 30000, signal: o.signal });
     const parts = splitLive(r.text);
     if (parts.text && isSkip(parts.text)) return { text: '', keyWords: [], skip: true };
     const text = parts.text.replace(/^[—–]\s*/, '');

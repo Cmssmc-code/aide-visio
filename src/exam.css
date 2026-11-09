@@ -359,7 +359,6 @@ body.ex-focus .ex-notes-fab { bottom: calc(18px + env(safe-area-inset-bottom)); 
 .ex-janswer-err { color: var(--err); font-weight: 600; }
 .ex-janswer .ex-q-loading { min-height: 0; }
 .ex-janswer .row { gap: 8px; flex-wrap: wrap; }
-.ex-janswer-lock { margin: 8px 0 0; }
 
 .ex-notes textarea { width: 100%; resize: vertical; font-size: 15px; line-height: 1.5; }
 
@@ -554,7 +553,6 @@ body.ex-focus .ex-notes-fab { bottom: calc(18px + env(safe-area-inset-bottom)); 
 .ex-call-listen .ex-listen { margin-top: 0; }
 .ex-call-subject .ex-paper { font-size: 15px; }
 .ex-live { display: grid; gap: 14px; align-content: start; min-height: 240px; border: 1px solid hsl(212 90% 55% / .22); }
-.ex-live.is-locked { min-height: 0; border-color: hsl(30 90% 50% / .35); background: linear-gradient(160deg, hsl(30 95% 55% / .10), transparent 70%), var(--glass, transparent); }
 .ex-live-wait { display: flex; align-items: center; gap: 12px; min-height: 120px; color: var(--text-2); }
 .ex-live-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ex-live-head b { font-size: 15px; }
@@ -572,14 +570,7 @@ body.ex-focus .ex-notes-fab { bottom: calc(18px + env(safe-area-inset-bottom)); 
 .ex-live-actions .btn.on { background: var(--accent-soft); color: var(--accent); }
 .ex-live-empty { margin: 0; color: var(--text-2); font-size: 16px; line-height: 1.5; }
 .ex-live-interim { margin: 0; color: var(--text-3); font-style: italic; font-size: 14px; }
-.ex-lock { display: flex; gap: 16px; align-items: flex-start; }
-.ex-lock-ic { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; flex: none; color: #fff; background: linear-gradient(135deg, #ff9f0a, #ff375f); }
-.ex-lock-ic svg.ico { width: 26px; height: 26px; }
-.ex-lock-t { min-width: 0; }
-.ex-lock-t .h2 { margin: 2px 0 8px; }
-.ex-lock-t p { margin: 0; line-height: 1.55; color: var(--text-2); }
-.ex-lock .ex-actions-row { margin-top: 14px; }
-@media (max-width: 559px) { .ex-lock { flex-direction: column; } .ex-lock .btn, .ex-live-actions .btn { flex: 1 1 auto; justify-content: center; } }
+@media (max-width: 559px) { .ex-live-actions .btn { flex: 1 1 auto; justify-content: center; } }
 .ex-chist { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .ex-chist-item { display: grid; gap: 6px; padding: 12px 14px; border-radius: 14px; background: var(--fill); }
 .ex-chist-item.is-current { box-shadow: inset 3px 0 0 var(--accent); }
@@ -602,3 +593,24 @@ body.ex-focus .ex-notes-fab { bottom: calc(18px + env(safe-area-inset-bottom)); 
 .ex-tb-title { display: grid; gap: 1px; min-width: 0; }
 .ex-tb-title > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ex-tb-title > small { font: 500 12px/1.2 var(--font); }
+
+/* Entraînement avec l'IA : deux cartes sur l'accueil, écran épuré */
+@media (min-width: 1100px) { .ex.ex-home .ex-roles { grid-template-columns: 1fr 1fr; } }
+.ex-solo-chooser .ex-jury-ai .ex-actions-row { flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+.ex-solo-chooser .ex-pick-head { margin-top: 30px; }
+.ex-solo-chooser .ex-more .ex-pick-row { margin-top: 8px; }
+.ex-solo .ex-phase-head .grow { flex: 1 1 auto; min-width: 0; }
+.ex-solo .ex-phase-head > .btn { flex: none; align-self: flex-start; }
+.ex-keybad { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 12px 0 0; padding: 12px 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--err) 35%, transparent); background: color-mix(in srgb, var(--err) 8%, transparent); }
+.ex-keybad p { display: flex; gap: 8px; align-items: center; margin: 0; flex: 1 1 260px; font-weight: 600; }
+.ex-keybad .ico-inline { color: var(--err); flex: none; }
+p.ex-keybad { font-weight: 600; }
+.ex-empty-ans { padding: 14px 16px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 9%, transparent); }
+.ex-empty-ans p { display: flex; gap: 8px; align-items: center; margin: 0; }
+.ex-fb:focus, .ex-score:focus { outline: none; }
+.ex-fb:focus-visible, .ex-score:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 12px; }
+.ex-myanswers { margin-top: 14px; }
+.ex-myans { list-style: decimal; margin: 12px 0 16px; padding-left: 22px; display: grid; gap: 16px; }
+.ex-myans p { margin: 2px 0 0; line-height: 1.5; }
+.ex-myans-a { display: grid; gap: 2px; padding: 10px 12px; margin-top: 8px !important; border-radius: 12px; border: 1px solid var(--sep); }
+.ex-myans-a small { color: var(--text-3); }

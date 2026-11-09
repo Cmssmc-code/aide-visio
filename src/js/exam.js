@@ -65,6 +65,17 @@
 
   const aiReady = () => { try { return !!(S.examAI && S.examAI.ready && S.examAI.ready()); } catch (e) { return false; } };
   const aiHas = (fn) => !!(S.examAI && typeof S.examAI[fn] === 'function');
+  // Clé refusée par le fournisseur : on retient une empreinte des clés (jamais les clés) pour ne plus appeler l'IA tant qu'elles n'ont pas changé.
+  function keySig() {
+    const st = settings();
+    const t = ['openaiKey', 'geminiKey', 'claudeKey', 'groqKey'].map((k) => str(st[k])).join('|');
+    let hsh = 5381;
+    for (let i = 0; i < t.length; i++) hsh = ((hsh * 33) ^ t.charCodeAt(i)) >>> 0;
+    return hsh.toString(36);
+  }
+  const keyRefused = () => { const r = prefs().keyRefused; return !!r && r === keySig(); };
+  const markKeyRefused = () => setPrefs({ keyRefused: keySig() });
+  const aiOn = () => aiReady() && !keyRefused();
   function noAI(what) {
     toast(`${what || 'Cette fonction'} demande une clé IA (Réglages). Le reste marche sans.`, 'warn', { duration: 7000, action: { label: 'Réglages', onClick: () => go('#/settings') } });
   }
@@ -129,12 +140,6 @@
     </div>`;
   }
 
-  const OPEN = Object.freeze({ open: true, source: 'local', now: 0 });
-  Object.defineProperty(S, 'examLock', {
-    enumerable: true,
-    value: Object.freeze({ unlockAt: 0, label: '', decide: () => OPEN, check: async () => OPEN })
-  });
-
   const THEMES = [
     { id: 1, title: 'Finance', fr: 'Finance' },
     { id: 2, title: 'Accounting & auditing', fr: 'Comptabilité et audit' },
@@ -160,34 +165,13 @@
 
   function examInfo() {
     const e = fiches().exam || {};
-    const d = new Date(e.date || '2026-11-12T10:00');
     return {
-      date: isNaN(d) ? new Date(2026, 10, 12, 10, 0) : d,
-      title: e.title || 'Oral d’anglais des affaires — UE 218',
-      mode: e.mode || 'À distance (Teams)',
       format: arr(e.format).length ? e.format : [
         { label: 'Préparation', minutes: 60, detail: 'Sans dictionnaire ni autre document que le sujet.' },
         { label: 'Exposé', minutes: 15, detail: 'Introduction, synthèse, problématique, commentaire, conclusion.' },
         { label: 'Entretien', minutes: 15, detail: 'Questions du jury : comprendre, préciser, ouvrir.' }
       ]
     };
-  }
-
-  function countdown(now) {
-    const n = now || new Date();
-    const d = examInfo().date;
-    const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-    const diff = Math.round((day(d) - day(n)) / 86400000);
-    const time = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-    const long = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-    if (diff > 1) return { big: 'J-' + diff, text: `Oral le ${long} à ${time}`, state: 'before' };
-    if (diff === 1) return { big: 'J-1', text: `Demain, ${long} à ${time}`, state: 'before' };
-    if (diff === 0 && n < d) {
-      const mins = Math.ceil((d - n) / 60000);
-      return { big: `Aujourd’hui ${time}`, text: mins > 60 ? `Dans ${Math.floor(mins / 60)} h ${pad2(mins % 60)}` : `Dans ${mins} min : relisez la checklist`, state: 'today' };
-    }
-    if (diff === 0 && n - d < 5 * 3600e3) return { big: 'C’est le jour J', text: 'Passage par ordre d’arrivée : bon courage !', state: 'now' };
-    return { big: 'Bonne suite !', text: 'L’oral est passé. Les fiches et l’entraînement restent disponibles.', state: 'after' };
   }
 
   function normSubject(x) {
@@ -351,7 +335,7 @@
   }
   const KIND_HASH = { jury: '#/oral/', solo: '#/eleve/', call: '#/appel/' };
   const sessionHash = (s) => (KIND_HASH[s.kind] || '#/eleve/') + s.id;
-  const kindLabel = (s) => (s.kind === 'jury' ? 'Jury' : s.kind === 'call' ? 'Appel d’entraînement' : 'Solo');
+  const kindLabel = (s) => (s.kind === 'jury' ? 'Jury' : s.kind === 'call' ? 'Sur Teams' : 'Avec l’IA');
   function callCountLabel(s) {
     const n = arr(s.call && s.call.answers).filter((a) => !a.skipped).length;
     return n ? `${n} question${n > 1 ? 's' : ''}` : s.call && s.call.endedAt ? 'Terminé' : 'En cours';
@@ -428,6 +412,7 @@
     return voicesP;
   }
   async function enVoice() {
+    if (S.devices && S.devices.voice) { try { const v = await S.devices.voice(); if (v) return v; } catch (e) {  } }
     const vs = (await loadVoices()).filter((v) => /^en/i.test(v.lang || ''));
     const rank = (v) => (/en[-_]GB/i.test(v.lang) ? 0 : /en[-_](IE|AU)/i.test(v.lang) ? 2 : 4) + (/natural|neural|online/i.test(v.name) ? 0 : /google/i.test(v.name) ? 0.5 : 1);
     return vs.sort((a, b) => rank(a) - rank(b))[0] || null;
@@ -526,6 +511,7 @@
     { id: 'conclusion', label: 'Conclusion', from: 13.5, to: 15 }
   ];
   const DURATIONS = [60, 45, 30, 20, 10];
+  const SOLO_DURATIONS = [60, 30];
   const NOTE_FIELDS = [
     { id: 'intro', label: 'Introduction', hint: 'Source, date, thème, ton (rédigé)', written: true },
     { id: 'summary', label: 'Synthèse', hint: 'Idées clés de l’auteur, en mots-clés' },
@@ -586,14 +572,6 @@
     CUR.key(e);
   });
 
-  function markTab(tab) {
-    requestAnimationFrame(() => $$('#tabbar [data-tab]').forEach((a) => {
-      const on = a.dataset.tab === tab;
-      a.classList.toggle('on', on);
-      if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
-    }));
-  }
-
   function topbar(o) {
     return `<header class="topbar ex-topbar">
       <button type="button" class="icon-btn" data-go="${esc(o.back || '#/')}" aria-label="Retour" title="Retour">${icon('chevron-left')}</button>
@@ -602,10 +580,11 @@
     </header>`;
   }
 
-  function stepper(steps, active, reached) {
+  function stepper(steps, active, reached, did) {
     return `<ol class="ex-steps" aria-label="Étapes">${steps.map((st, i) => {
-      const state = st.id === active ? 'on' : i <= reached ? 'done' : '';
-      return `<li><button type="button" class="ex-step ${state}" data-step="${st.id}"${st.id === active ? ' aria-current="step"' : ''}${i > reached + 1 ? ' disabled' : ''}>
+      const state = st.id === active ? 'on' : i <= reached && (!did || did(st.id)) ? 'done' : '';
+      const say = state === 'on' ? 'en cours' : state === 'done' ? 'faite' : i > reached + 1 ? 'pas encore disponible' : 'à venir';
+      return `<li><button type="button" class="ex-step ${state}" data-step="${st.id}" aria-label="Étape ${i + 1} : ${esc(st.label)}, ${say}"${st.id === active ? ' aria-current="step"' : ''}${i > reached + 1 ? ' disabled' : ''}>
         <span class="ex-step-n">${state === 'done' && st.id !== active ? icon('check') : i + 1}</span><span class="ex-step-l">${esc(st.label)}</span></button></li>`;
     }).join('')}</ol>`;
   }
@@ -648,11 +627,9 @@
     const custom = store.isCustom(s.id);
     const did = o.done && o.done[s.id];
     const when = did ? new Date(did.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '';
-    return `<button type="button" class="card ex-scard${o.hide ? ' is-hidden-q' : ''}" data-subject="${esc(s.id)}" style="--hue:${THEME_HUE[s.theme] || 214}">
+    return `<button type="button" class="card ex-scard" data-subject="${esc(s.id)}" style="--hue:${THEME_HUE[s.theme] || 214}">
       <div class="ex-scard-top">${themeChip(s.theme)}${custom ? `<span class="pill pill-xs pill-accent">${/^ai-/.test(s.id) ? 'IA' : 'Importé'}</span>` : ''}${did ? `<span class="pill pill-xs pill-ok" title="${did.kind === 'jury' ? 'Oral blanc avec jury' : 'Entraînement solo'}">${icon('check')}Fait le ${esc(when)}</span>` : ''}</div>
-      ${o.hide
-        ? `<b class="ex-scard-title">Sujet ${esc(o.n || '')} · ${esc((themeOf(s.theme) || {}).fr || 'thème libre')}</b><span class="ex-scard-q muted">Titre et question cachés jusqu’au tirage.</span>`
-        : `<b class="ex-scard-title" lang="en">${esc(s.title)}</b><span class="ex-scard-q" lang="en">${esc(s.question)}</span>`}
+      <b class="ex-scard-title" lang="en">${esc(s.title)}</b><span class="ex-scard-q" lang="en">${esc(s.question)}</span>
       <span class="ex-scard-meta">${icon('doc')}${subjectWords(s)} mots · ${s.paragraphs.length} §${s.date ? ' · ' + esc(s.date) : ''}</span>
     </button>`;
   }
@@ -823,17 +800,21 @@
     });
   }
 
-  function previewSubjectSheet(s, mode, start, hide) {
+  function previewSubjectSheet(s, mode, start, startFull) {
     const custom = store.isCustom(s.id);
+    const solo = mode === 'solo';
     const body = h(`<div class="stack">
       <div class="row">${themeChip(s.theme)}<span class="pill pill-xs">${subjectWords(s)} mots</span></div>
-      ${mode === 'solo' ? (hide ? '<p class="small muted">Titre, question et texte s’affichent au lancement du chrono, comme le jour J.</p>' : `<div class="ex-question"><span class="ex-question-l">Question</span><p lang="en">${esc(s.question)}</p></div><p class="small muted">Le texte complet s’affiche au lancement du chrono, comme le jour J.</p>`) : subjectHTML(s)}
+      ${solo ? `<div class="ex-question"><span class="ex-question-l">Question</span><p lang="en">${esc(s.question)}</p></div><p class="small muted">« Questions du jury » : le jury IA vous interroge tout de suite, l’article reste affiché. « Oral complet » : 1 h de préparation, puis exposé et questions.</p>` : subjectHTML(s)}
       ${mode === 'jury' ? `<details class="ex-details"><summary>Corrigé indicatif (jury)</summary>${corrigeHTML(s, true)}</details>` : ''}
     </div>`);
     const actions = [];
     if (custom) actions.push({ label: 'Supprimer', kind: 'danger', icon: 'trash', onClick: async () => { if (await confirmSheet({ title: 'Supprimer ce sujet ?', text: s.title, okLabel: 'Supprimer', danger: true })) { store.removeSubject(s.id); toast('Sujet supprimé.', 'ok'); S.app.refresh && S.app.refresh(); } } });
-    actions.push({ label: mode === 'solo' ? 'M’entraîner sur ce sujet' : mode === 'call' ? 'Choisir pour l’appel' : 'Faire passer ce sujet', kind: 'primary', icon: 'play', onClick: () => start(s) });
-    sheet({ title: hide ? 'Sujet caché' : s.title, body, wide: true, actions });
+    if (solo) {
+      actions.push({ label: 'Oral complet (1 h de préparation)', kind: 'ghost', icon: 'clock', onClick: () => startFull(s) });
+      actions.push({ label: 'Questions du jury', kind: 'primary', icon: 'play', onClick: () => start(s) });
+    } else actions.push({ label: mode === 'call' ? 'Choisir pour l’appel' : 'Faire passer ce sujet', kind: 'primary', icon: 'play', onClick: () => start(s) });
+    sheet({ title: s.title, body, wide: true, actions });
   }
 
   function drawSheet(list, mode, start) {
@@ -865,30 +846,19 @@
 
   function renderHome(root) {
     const list = store.list();
-    const sc = scored();
-    const last = sc[sc.length - 1];
-    const prev = sc[sc.length - 2];
-    const delta = last && prev ? round1(last.evaluation.total - prev.evaluation.total) : null;
-    const open = list.find((s) => (s.kind === 'call' ? s.call && s.call.startedAt && !s.call.endedAt : s.phase !== 'done' && !s.evaluation && (s.prep.startedAt || s.expose.startedAt)) && Date.now() - Date.parse(stamp(s)) < 4 * 86400e3);
-    const n = list.length;
-    const histSub = last
-      ? `Dernière note ${fmtNum(last.evaluation.total)}/20${delta != null ? ` · <span class="${delta >= 0 ? 'ex-up' : 'ex-down'}">${delta >= 0 ? '+' : ''}${fmtNum(delta)}</span>` : ''}`
-      : n ? `${n} séance${n > 1 ? 's' : ''} enregistrée${n > 1 ? 's' : ''}` : 'Vos séances et vos notes apparaîtront ici';
+    const open = list.find((s) => (s.kind === 'call' ? s.call && s.call.startedAt && !s.call.endedAt : s.phase !== 'done' && !s.evaluation && (s.prep.startedAt || s.expose.startedAt || s.interview.startedAt)) && Date.now() - Date.parse(stamp(s)) < 4 * 86400e3);
+    const openLabel = (s) => (s.kind === 'solo' ? 'Entraînement avec l’IA' : s.kind === 'call' ? 'Entraînement sur Teams' : 'Oral avec jury');
     root.innerHTML = `<div class="screen ex ex-home">
       <header class="home-head">
         <div class="brand">
           <div class="app-icon" aria-hidden="true">${icon('graduation')}</div>
           <div class="brand-text"><h1 class="h1">Aide Visio</h1><p class="home-sub">Entraînement à l’oral d’anglais des affaires</p></div>
         </div>
-        <div class="home-tools">
-          <button type="button" class="icon-btn hide-mobile" data-go="#/fiches" title="Fiches" aria-label="Fiches">${icon('list')}</button>
-          <button type="button" class="icon-btn hide-mobile" data-go="#/settings" title="Réglages" aria-label="Réglages">${icon('gear')}</button>
-        </div>
       </header>
 
       ${open ? `<section class="card ex-resume">
         <span class="tile tile-orange">${icon('clock')}</span>
-        <div class="grow"><b>Séance en cours</b><small class="muted">${open.kind === 'solo' ? 'Entraînement avec l’IA' : esc(kindLabel(open))} · ${esc(open.subject.title)} · ${esc(phaseLabel(open))}</small></div>
+        <div class="grow"><b>Séance en cours</b><small class="muted">${esc(openLabel(open))} · ${esc(open.subject.title)} · ${esc(phaseLabel(open))}</small></div>
         <button type="button" class="btn btn-primary btn-sm" data-go="${esc(sessionHash(open))}">${icon('play')}<span>Reprendre</span></button>
       </section>` : ''}
 
@@ -898,25 +868,39 @@
           <span class="ex-role-text"><b>Entraînement avec l’IA</b><span>Un jury IA vous interroge à l’oral en anglais et corrige chaque réponse.</span></span>
           ${icon('chevron-right', 'chev')}
         </button>
-        <button type="button" class="card ex-role ex-role-jury" data-go="#/oral/new">
-          <span class="ex-role-ic">${icon('person2')}</span>
-          <span class="ex-role-text"><b>Entraînement sur Teams</b><span>Avec un jury humain : sujet partagé, chronos, grille et note sur 20.</span></span>
-          ${icon('chevron-right', 'chev')}
-        </button>
-        <button type="button" class="card ex-role ex-role-hist" data-go="#/historique">
-          <span class="ex-role-ic">${icon('clock')}</span>
-          <span class="ex-role-text"><b>Historique</b><span>${histSub}</span></span>
+        <button type="button" class="card ex-role ex-role-jury" data-go="#/appel">
+          <span class="ex-role-ic">${icon('video')}</span>
+          <span class="ex-role-text"><b>Entraînement sur Teams</b><span>Avec un jury en visio : importez le sujet reçu, l’assistant vous souffle une réponse en anglais.</span></span>
           ${icon('chevron-right', 'chev')}
         </button>
       </nav>
       ${aiReady() ? '' : `<p class="ex-home-note">${icon('info', 'ico-inline')}<span>Sans clé IA, le jury IA pose les questions mais ne corrige pas.</span><button type="button" class="btn btn-quiet btn-sm" data-go="#/settings">Ajouter une clé</button></p>`}
     </div>`;
-    markTab('home');
     setCurrent({});
   }
   function phaseLabel(s) {
     if (s.kind === 'call') return s.call && s.call.endedAt ? 'terminé' : s.call && s.call.startedAt ? 'en cours' : 'pas commencé';
     return ({ prep: 'préparation', expose: 'exposé', interview: s.kind === 'solo' ? 'jury IA' : 'entretien', review: 'bilan', done: 'terminée' })[s.phase] || '';
+  }
+
+  function pickRandom(list, avoid) {
+    const recent = new Set(store.list().slice(0, 6).map((x) => x.subjectId));
+    let pool = list.filter((s) => !recent.has(s.id) && s.id !== avoid);
+    if (!pool.length) pool = list.filter((s) => s.id !== avoid);
+    if (!pool.length) pool = list;
+    return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+  }
+  let AUTO_ASK = '';
+  function startSolo(subj, direct) {
+    const s = newSession('solo', subj);
+    if (direct) {
+      s.quick = true;
+      s.phase = 'interview';
+      s.maxPhase = phaseIndex('interview');
+      AUTO_ASK = s.id;
+    }
+    store.save(s);
+    go(sessionHash(s));
   }
 
   function renderChooser(root, mode) {
@@ -927,35 +911,32 @@
       go(sessionHash(s));
     };
     const solo = mode === 'solo';
-    const call = mode === 'call';
-    st.hide = solo && prefs().soloHideSubjects !== false;
     const aiOk = aiReady();
     const needKey = aiOk ? '' : '<span class="pill pill-xs pill-warn ex-needkey">Clé IA requise</span>';
-    root.innerHTML = `<div class="screen ex ex-chooser">
-      ${topbar({ title: solo ? 'Entraînement avec l’IA' : call ? 'Appel d’entraînement' : 'Entraînement sur Teams', sub: solo ? '' : call ? 'Teams ou Meet' : 'Jury humain · choisir le sujet', back: '#/' })}
-      ${call ? `<p class="ex-call-intro muted">Choisissez le sujet : il reste affiché pendant l’appel, avec les réponses de l’IA.</p>` : ''}
+    const toolBtns = `<button type="button" class="btn btn-quiet" data-act="import">${icon('import')}<span>Importer un sujet</span></button>
+        <button type="button" class="btn btn-quiet${aiOk ? '' : ' is-needkey'}" data-act="gen"${aiOk ? '' : ' aria-disabled="true" title="Demande une clé IA (Réglages)"'}>${icon('globe')}<span>Générer avec l’IA</span>${needKey}</button>`;
+    root.innerHTML = `<div class="screen ex ex-chooser${solo ? ' ex-solo-chooser' : ''}">
+      ${topbar({ title: solo ? 'Entraînement avec l’IA' : 'Entraînement sur Teams', sub: solo ? '' : 'Jury humain · choisir le sujet', back: '#/' })}
       ${solo ? `<section class="card card-pad ex-jury-ai">
         <div class="ex-jury-ai-main">
           <span class="ex-role-ic">${icon('sparkles')}</span>
           <div><h1 class="h2">Jury IA</h1>
-          <p class="muted">Un sujet au hasard, 5 à 8 questions à l’oral en anglais, une correction après chaque réponse.${aiOk ? '' : ' Sans clé IA : questions seulement, sans correction.'}</p></div>
+          <p class="muted">Le jury vous pose 6 questions à l’oral, en anglais.${aiOk && !keyRefused() ? ' Chaque réponse est corrigée.' : ' Sans clé IA, les réponses ne sont pas corrigées.'}</p></div>
         </div>
         <div class="ex-actions-row">
-          <button type="button" class="btn btn-primary btn-lg" data-act="quick-jury">${icon('play')}<span>Commencer</span></button>
+          <button type="button" class="btn btn-primary btn-lg" data-act="quick-jury">${icon('play')}<span>Commencer (sujet au hasard)</span></button>
+          <button type="button" class="btn btn-quiet" data-act="full-random">${icon('clock')}<span>Oral complet (1 h de préparation)</span></button>
         </div>
       </section>
-      <div class="section-head"><h2 class="h2">Ou un oral complet avec préparation</h2></div>` : ''}
-      <div class="ex-actions-row ex-pick-row">
-        <button type="button" class="btn${solo ? '' : ' btn-primary'} btn-lg" data-act="draw">${icon('sparkles')}<span>Tirer un sujet au hasard</span></button>
-        <button type="button" class="btn btn-quiet" data-act="import">${icon('import')}<span>Importer</span></button>
-        <button type="button" class="btn btn-quiet${aiOk ? '' : ' is-needkey'}" data-act="gen"${aiOk ? '' : ' aria-disabled="true" title="Demande une clé IA (Réglages)"'}>${icon('globe')}<span>Générer avec l’IA</span>${needKey}</button>
-      </div>
-      ${solo ? '<details class="ex-more"><summary>Choisir un sujet précis</summary>' : ''}
-      ${solo ? `<label class="row ex-hide-q"><span class="switch switch-sm"><input type="checkbox" data-f="hide-subjects"${st.hide ? ' checked' : ''}><span></span></span><span class="small">Cacher titres et questions avant le tirage</span></label>` : ''}
+      <div class="section-head ex-pick-head"><h2 class="h2">Choisir le sujet</h2></div>` : `<div class="ex-actions-row ex-pick-row">
+        <button type="button" class="btn btn-primary btn-lg" data-act="draw">${icon('sparkles')}<span>Tirer un sujet au hasard</span></button>
+        ${toolBtns}
+      </div>`}
       <div class="ex-chips ex-theme-filter" role="tablist" aria-label="Filtrer par thème" data-b="chips"></div>
       <div class="ex-sgrid" data-b="grid"></div>
-      ${solo ? '</details>' : ''}
+      ${solo ? `<details class="ex-more"><summary>Importer ou générer un sujet</summary><div class="ex-actions-row ex-pick-row">${toolBtns}</div></details>` : ''}
     </div>`;
+    const filtered = () => store.subjects().filter((s) => !st.theme || s.theme === st.theme);
     function paint() {
       const all = store.subjects();
       const counts = {};
@@ -965,84 +946,29 @@
       const list = all.filter((s) => !st.theme || s.theme === st.theme)
         .sort((a, b) => (store.isCustom(b.id) - store.isCustom(a.id)) || ((a.theme || 9) - (b.theme || 9)));
       const done = doneMap();
-      $('[data-b="grid"]', root).innerHTML = list.length ? list.map((x, i) => subjectCard(x, { done, hide: st.hide, n: i + 1 })).join('')
+      $('[data-b="grid"]', root).innerHTML = list.length ? list.map((x) => subjectCard(x, { done })).join('')
         : `<div class="empty card"><div class="empty-ic">${icon('doc')}</div><h2 class="h3">Aucun sujet${st.theme ? ' pour ce thème' : ''}</h2><p class="muted">Importez un article ou générez-en un avec l’IA.</p></div>`;
     }
     paint();
+    const startDirect = (subj) => startSolo(subj, true);
     root.addEventListener('click', (e) => {
       const chip = e.target.closest('[data-theme]');
       if (chip && root.contains(chip)) { st.theme = Number(chip.dataset.theme) || 0; setPrefs({ chooserTheme: st.theme }); paint(); return; }
       const card = e.target.closest('[data-subject]');
-      if (card) { const s = store.getSubject(card.dataset.subject); if (s) previewSubjectSheet(s, mode, start, st.hide); return; }
+      if (card) { const s = store.getSubject(card.dataset.subject); if (s) previewSubjectSheet(s, mode, solo ? startDirect : start, start); return; }
       const b = e.target.closest('[data-act]');
       if (!b) return;
       const act = b.dataset.act;
-      if (act === 'draw') drawSheet(store.subjects().filter((s) => !st.theme || s.theme === st.theme), mode, start);
-      else if (act === 'import') importSubjectSheet(start);
-      else if (act === 'gen') generateSubjectSheet(start);
-      else if (act === 'quick-jury') quickJurySheet(store.subjects().filter((s) => !st.theme || s.theme === st.theme));
-      else if (act === 'teams-join') {
-        const f = $('[data-f="teams"]', root);
-        const v = f ? f.value : '';
-        if (!v.trim()) { toast('Collez d’abord le lien Teams ou Meet reçu par mail ou message.', 'warn'); if (f) f.focus(); return; }
-        const link = teamsValid(v);
-        if (link) { setPrefs({ studentTeams: link }); if (f) f.value = link; }
-        openTeams(v);
+      if (act === 'draw') drawSheet(filtered(), mode, start);
+      else if (act === 'import') importSubjectSheet(solo ? startDirect : start);
+      else if (act === 'gen') generateSubjectSheet(solo ? startDirect : start);
+      else if (act === 'quick-jury' || act === 'full-random') {
+        const pick = pickRandom(filtered().length ? filtered() : store.subjects());
+        if (!pick) { toast('Aucun sujet disponible.', 'warn'); return; }
+        startSolo(pick, act === 'quick-jury');
       }
     });
-    root.addEventListener('change', (e) => {
-      const hs = e.target.closest && e.target.closest('[data-f="hide-subjects"]');
-      if (hs) { st.hide = hs.checked; setPrefs({ soloHideSubjects: hs.checked }); paint(); return; }
-      const f = e.target.closest && e.target.closest('[data-f="teams"]');
-      if (f) {
-        const link = teamsValid(f.value);
-        const hint = $('[data-b="teams-hint"]', root);
-        const box = $('[data-b="teams"]', root);
-        if (box) { box.classList.toggle('is-bad', !link && !!f.value.trim()); box.classList.toggle('is-set', !!link); }
-        if (link) { f.value = link; setPrefs({ studentTeams: link }); if (hint) hint.textContent = `Lien prêt : « Ouvrir » lance ${meetingApp(link)} dans un nouvel onglet.`; }
-        else if (f.value.trim() && hint) hint.textContent = LINK_BAD;
-      }
-    });
-    markTab('home');
     setCurrent({});
-  }
-
-  function quickJurySheet(list) {
-    if (!list.length) { toast('Aucun sujet disponible.', 'warn'); return; }
-    const recent = new Set(store.list().slice(0, 6).map((x) => x.subjectId));
-    let pool = list.filter((s) => !recent.has(s.id));
-    if (!pool.length) pool = list;
-    let pick = null;
-    const body = h('<div class="ex-draw" aria-live="polite"></div>');
-    function draw() {
-      const others = pool.length > 1 && pick ? pool.filter((x) => x !== pick) : pool;
-      pick = others[Math.floor(Math.random() * others.length)];
-      body.innerHTML = `<div class="ex-draw-card card" style="--hue:${THEME_HUE[pick.theme] || 214}">
-        <div class="ex-draw-env">${icon('person2')}</div>
-        ${themeChip(pick.theme)}
-        <b lang="en">${esc(pick.title)}</b>
-        <p class="ex-draw-q" lang="en">${esc(pick.question)}</p>
-        <p class="small muted">Lisez l’article (il reste affiché pendant l’entretien), puis répondez aux questions du jury à voix haute.</p>
-      </div>`;
-      body.firstElementChild.classList.add('pop');
-    }
-    draw();
-    const start = (phase) => {
-      const s = newSession('solo', pick);
-      s.quick = true;
-      s.phase = phase;
-      s.maxPhase = phaseIndex(phase);
-      store.save(s);
-      go('#/eleve/' + s.id);
-    };
-    sheet({
-      title: 'Jury IA · sujet tiré au sort', body,
-      actions: [
-        { label: 'Autre sujet', kind: 'ghost', icon: 'refresh', close: false, onClick: () => { draw(); return false; } },
-        { label: 'Exposé d’abord', kind: 'ghost', icon: 'mic', onClick: () => start('expose') },
-        { label: 'Questions du jury', kind: 'primary', icon: 'play', onClick: () => start('interview') }
-      ]
-    });
   }
 
   function probePcProgram() {
@@ -1068,7 +994,7 @@
     const mobile = isMobileDevice();
     const prefKey = o.prefKey || 'listenPreset';
     const saved = str(prefs()[prefKey]);
-    const A = { on: false, starting: false, cancelled: false, mobile, preset: mobile && SPLIT_SRC.includes(saved) ? 'haut-parleur' : saved, state: 'off', interim: '', offs: [], pc: mobile ? 'off' : 'unknown' };
+    const A = { on: false, starting: false, cancelled: false, error: '', errorCode: '', mobile, preset: mobile && SPLIT_SRC.includes(saved) ? 'haut-parleur' : saved, state: 'off', interim: '', offs: [], pc: mobile ? 'off' : 'unknown' };
     const split = () => SPLIT_SRC.includes(A.preset);
     const roleOf = o.roleOf ? (who) => o.roleOf(who, split()) : (who) => (split() && who === 'me' ? 'jury' : 'student');
     const interimRoles = o.interimRoles || ['student'];
@@ -1079,8 +1005,9 @@
       A.preset = preset || A.preset || (A.pc === 'ok' ? 'pc-interne' : 'haut-parleur');
       if (A.mobile && SPLIT_SRC.includes(A.preset)) A.preset = 'haut-parleur';
       setPrefs({ [prefKey]: A.preset });
+      A.error = ''; A.errorCode = '';
       if (A.preset === 'visio-casque' && !aiReady()) {
-        A.state = 'error'; C.paintListen();
+        A.state = 'error'; A.error = NO_KEY_TAB; A.errorCode = 'NO_KEY'; C.paintListen();
         toast(NO_KEY_TAB, 'warn', { duration: 9000, action: { label: 'Réglages', onClick: () => go('#/settings') } });
         return;
       }
@@ -1093,14 +1020,23 @@
         if (!ev) return;
         if (ev.state === 'error') {
           A.state = 'error';
+          A.error = (S.audio.message && S.audio.message(ev.code)) || ev.error || 'Écoute interrompue.'; A.errorCode = str(ev.code);
           if (!A.starting) toast((S.audio.message && S.audio.message(ev.code)) || ev.error || 'Écoute interrompue.', 'err', { duration: 9000 });
         } else if (ev.state === 'listening') A.state = 'listening';
         C.paintListen();
       }));
-      A.offs.push(S.audio.on('ended', () => { toast('La source audio s’est arrêtée.', 'warn'); stop(); }));
+      A.offs.push(S.audio.on('ended', (ev) => {
+        const msg = (ev && ev.reason === 'display-ended' && S.audio.message && S.audio.message('DISPLAY_ENDED')) ||
+          (ev && ev.reason === 'track-ended' ? 'Le micro s’est coupé (débranché ou pris par une autre application).' : 'Le son s’est coupé : plus rien n’est capté.');
+        toast(msg, 'warn', { duration: 9000 });
+        stop({ drainMs: 0 }).then(() => { A.state = 'error'; A.error = msg; A.errorCode = 'ENDED'; if (C.alive) C.paintListen(); });
+      }));
       try {
         const hint = [C.s.subject.title].concat(arr(C.s.subject.corrige.keyVocab).map((v) => str(v).split('—')[0].trim())).join(', ').slice(0, 400);
-        await S.audio.start(A.preset, { lang: 'en-GB', hint });
+        const startOpts = { lang: 'en-GB', hint };
+        // Micro choisi dans Réglages (devices.js) : id revalidé (il change parfois après un effacement des cookies).
+        if (S.devices && typeof S.devices.resolve === 'function') { try { startOpts.micDeviceId = await S.devices.resolve('mic'); } catch (e) {  } }
+        await S.audio.start(A.preset, startOpts);
         if (A.cancelled || !C.alive) {
           unsub();
           try { await S.audio.stop({ drainMs: 0 }); } catch (e) {  }
@@ -1115,6 +1051,7 @@
         A.on = false; A.state = A.cancelled ? 'off' : 'error';
         if (!A.cancelled && C.alive) {
           const msg = (e && e.code && S.audio.message && S.audio.message(e.code)) || errMsg(e);
+          A.error = msg; A.errorCode = str(e && e.code);
           toast(msg + (o.call ? '' : ' La console reste utilisable (notes manuelles).'), 'err', { duration: 9000 });
         }
       } finally { A.starting = false; if (C.alive) C.paintListen(); }
@@ -1224,10 +1161,12 @@
     const d = durations(s);
     const L = [];
     L.push(`# Oral blanc — UE 218 · ${fmtDate(s.createdAt, true)}`, '');
-    L.push(`- Rôle : ${s.kind === 'jury' ? `Jury (${teamsValid(s.teamsLink) ? meetingApp(s.teamsLink) : 'à distance'})` : 'Entraînement solo'}`);
+    L.push(`- Rôle : ${s.kind === 'jury' ? `Jury (${teamsValid(s.teamsLink) ? meetingApp(s.teamsLink) : 'à distance'})` : 'Entraînement avec l’IA'}`);
     L.push(`- Sujet : ${s.subject.title}${s.subject.theme ? ` (thème ${s.subject.theme})` : ''}`);
     L.push(`- Question : ${s.subject.question}`);
-    L.push(`- Durées : préparation ${fmtDur(d.prepMs)} · exposé ${fmtDur(d.exposeMs)} · entretien ${fmtDur(d.interviewMs)}`, '');
+    const durs = [['préparation', d.prepMs], ['exposé', d.exposeMs], [s.kind === 'solo' ? 'questions du jury' : 'entretien', d.interviewMs]].filter((x) => x[1] > 0);
+    if (durs.length) L.push(`- Durées : ${durs.map((x) => `${x[0]} ${fmtDur(x[1])}`).join(' · ')}`);
+    L.push('');
     if (e) {
       L.push(`## Note : ${fmtNum(e.total)}/20`, '');
       e.criteria.forEach((c) => L.push(`- ${c.label} : ${fmtNum(c.score)}/${c.max}${c.comment ? ` — ${c.comment}` : ''}`));
@@ -1238,8 +1177,10 @@
       if (e.modelPlan) L.push('', '## Plan modèle', '', e.modelPlan);
       if (e.message) L.push('', '## Message pour Audrey', '', e.message);
     }
-    const cl = CHECKS.map(([k, l]) => `${s.expose.checklist[k] ? '[x]' : '[ ]'} ${l}`).join(' · ');
-    L.push('', '## Grille de l’exposé', '', cl);
+    if (s.kind === 'jury' || s.expose.startedAt) {
+      const cl = CHECKS.map(([k, l]) => `${s.expose.checklist[k] ? '[x]' : '[ ]'} ${l}`).join(' · ');
+      L.push('', '## Grille de l’exposé', '', cl);
+    }
     if (s.expose.juryNotes) L.push('', '## Notes du jury', '', s.expose.juryNotes);
     if (arr(s.expose.errors).length && !e) L.push('', '## Fautes relevées', '', ...s.expose.errors.map((x) => `- « ${x.said} » → « ${x.better} »`));
     const tx = exposeText(s);
@@ -1259,12 +1200,50 @@
     const e = s.evaluation ? normEval(s.evaluation) : null;
     const warns = durationWarnings(s);
     const checks = CHECKS.filter(([k]) => s.expose.checklist[k]).length;
+    const solo = s.kind === 'solo';
     const durRow = `<div class="ex-durs">
-      <span><small>Préparation</small><b>${fmtDur(d.prepMs)}</b></span>
-      <span class="${s.expose.startedAt && d.exposeMs < 600000 ? 'is-bad' : ''}"><small>Exposé</small><b>${fmtDur(d.exposeMs)}</b></span>
-      <span><small>${s.kind === 'solo' ? 'Jury IA' : 'Entretien'}</small><b>${fmtDur(d.interviewMs)}</b></span>
+      ${d.prepMs > 0 ? `<span><small>Préparation</small><b>${fmtDur(d.prepMs)}</b></span>` : ''}
+      ${d.exposeMs > 0 ? `<span class="${s.expose.startedAt && d.exposeMs < 600000 ? 'is-bad' : ''}"><small>Exposé</small><b>${fmtDur(d.exposeMs)}</b></span>` : ''}
+      ${d.interviewMs > 0 ? `<span><small>${solo ? 'Questions du jury' : 'Entretien'}</small><b>${fmtDur(d.interviewMs)}</b></span>` : ''}
       ${s.kind === 'jury' ? `<span><small>Grille</small><b>${checks}/${CHECKS.length}</b></span>` : ''}
     </div>`;
+    if (!e && solo) {
+      const direct = !s.expose.startedAt && !exposeText(s);
+      const asked = arr(s.interview.asked);
+      const nb = asked.length;
+      const keyBlock = keyRefused()
+        ? `<p class="ex-keybad">${icon('warning', 'ico-inline')}<span>Votre clé IA est refusée : la correction est coupée.</span></p><div class="row"><button type="button" class="btn btn-primary" data-go="#/settings">${icon('gear')}<span>Corriger la clé</span></button></div>`
+        : `<p class="muted">Ajoutez une clé IA pour obtenir une note sur 20.</p><div class="row"><button type="button" class="btn btn-primary" data-go="#/settings">${icon('gear')}<span>Ajouter une clé IA</span></button></div>`;
+      const jq = arr(s.subject.corrige && s.subject.corrige.juryQuestions);
+      box.innerHTML = aiOn()
+        ? `<section class="card card-pad ex-review-pre">
+          <h2 class="h2">Votre bilan</h2>
+          ${durRow}
+          ${warns.length ? `<ul class="ex-warns">${warns.map((w) => `<li>${icon('warning')}${esc(w)}</li>`).join('')}</ul>` : ''}
+          <p class="muted">${direct ? `L’IA note vos ${nb > 1 ? nb + ' réponses' : 'réponses'} sur 20 et relève vos fautes.` : 'L’IA note votre oral sur 20 (exposé et réponses) et relève vos fautes.'}</p>
+          <div class="row"><button type="button" class="btn btn-primary btn-lg" data-act="evaluate">${icon('sparkles')}<span>Obtenir ma note</span></button></div>
+          <div data-b="eval-state" class="small muted" aria-live="polite"></div>
+        </section>`
+        : `<section class="card card-pad ex-review-pre">
+          <h2 class="h2">Votre bilan</h2>
+          ${durRow}
+          ${keyBlock}
+        </section>
+        <section class="card card-pad ex-myanswers">
+          <h3 class="h3">Vos réponses</h3>
+          ${nb ? `<ol class="ex-myans">${asked.map((a) => {
+            const src = jq.find((x) => x && x.en === a.en);
+            const fr = a.fr || (src && src.fr) || '';
+            return `<li><p class="ex-myans-q" lang="en"><b>${esc(a.en)}</b></p>${fr ? `<p class="small muted">${esc(fr)}</p>` : ''}<p class="ex-myans-a"><small>Votre réponse</small><span lang="en">${esc(a.answer || '—')}</span></p></li>`;
+          }).join('')}</ol>` : '<p class="muted">Aucune réponse pour l’instant.</p>'}
+          <details class="ex-details"><summary>Pistes de réponse (corrigé)</summary>${corrigeHTML(s.subject, false)}</details>
+        </section>
+        <div class="ex-actions-row">
+          <button type="button" class="btn btn-primary btn-lg" data-act="finish">${icon('check')}<span>${s.phase === 'done' ? 'Enregistré' : 'Terminer'}</span></button>
+          <button type="button" class="btn btn-lg" data-act="export">${icon('download')}<span>Télécharger le bilan</span></button>
+        </div>`;
+      return;
+    }
     if (!e) {
       box.innerHTML = `<section class="card card-pad ex-review-pre">
         <h2 class="h2">Bilan de l’oral</h2>
@@ -1279,7 +1258,7 @@
       </section>`;
       return;
     }
-    box.innerHTML = `<section class="card card-pad ex-score">
+    box.innerHTML = `<section class="card card-pad ex-score" tabindex="-1">
         ${ring(e.total, 20, true)}
         <div class="ex-score-main">
           <span class="eyebrow">${icon('star')}${e.manual ? 'Note du jury' : 'Évaluation'}</span>
@@ -1314,8 +1293,8 @@
       </section>
       <div class="ex-actions-row">
         <button type="button" class="btn btn-primary btn-lg" data-act="finish">${icon('check')}<span>${s.phase === 'done' ? 'Enregistré' : 'Terminer'}</span></button>
-        <button type="button" class="btn btn-lg" data-act="export">${icon('download')}<span>Exporter (.md)</span></button>
-        <button type="button" class="btn btn-lg" data-act="evaluate"${aiReady() ? '' : ' disabled'}>${icon('refresh')}<span>Réévaluer avec l’IA</span></button>
+        <button type="button" class="btn btn-lg" data-act="export">${icon('download')}<span>Télécharger le bilan</span></button>
+        <button type="button" class="btn btn-lg" data-act="evaluate"${aiOn() ? '' : ' disabled'}>${icon('refresh')}<span>Réévaluer avec l’IA</span></button>
       </div>`;
     $$('.ex-crit input', box).forEach((inp) => inp.addEventListener('input', () => {
       const ev = normEval(s.evaluation);
@@ -1360,15 +1339,16 @@
       s.evaluation = normEval(r);
       C.saveNow();
       if (s.phase === 'review' || s.phase === 'done') {
-        toast(`Évaluation prête : ${fmtNum(s.evaluation.total)}/20.`, 'ok');
         C.paint();
+        const sc = $('.ex-score', C.root); if (sc) sc.focus({ preventScroll: true });
       } else {
         toast(`Évaluation prête (${fmtNum(s.evaluation.total)}/20) : elle s’affichera à l’étape Bilan.`, 'ok', { duration: 7000 });
       }
     } catch (e) {
       if (isAbort(e) || !C.alive) return;
+      if (e && e.code === 'KEY') { markKeyRefused(); if (s.kind === 'solo') { C.paint(); return; } }
       if (stEl) stEl.textContent = errMsg(e);
-      toast('Évaluation impossible : ' + errMsg(e), 'err');
+      else toast('Évaluation impossible : ' + errMsg(e), 'err');
       btns.forEach((b) => { b.disabled = false; b.classList.remove('busy'); });
     }
   }
@@ -1533,7 +1513,7 @@
     C.L = L;
     C.notes = { busy: false, lastAt: Date.now(), newChars: 0, ctrl: null };
     C.q = { busy: false, ctrl: null };
-    C.ja = { busy: false, ctrl: null, req: null, item: null, error: '', noKey: false, question: '', src: '', prev: null, heardLocked: false };
+    C.ja = { busy: false, ctrl: null, req: null, item: null, error: '', noKey: false, question: '', src: '', prev: null };
     C.wantsWake = true;
     document.body.classList.add('ex-focus');
     keepAwake(true);
@@ -1841,13 +1821,6 @@
       askModel(prev && now - prev.at < 8000 ? prev.text + ' ' + text : text, 'heard');
     }
     async function askModel(question, src) {
-      if (src === 'heard') {
-        let st = null;
-        try { st = await S.examLock.check(); } catch (e) { st = null; }
-        if (!C.alive) return;
-        C.ja.heardLocked = !(st && st.open === true);
-        if (C.ja.heardLocked) { paintJuryAnswer(); return; }
-      }
       if (C.ja.ctrl) C.ja.ctrl.abort();
       const req = {};
       Object.assign(C.ja, { req, ctrl: null, busy: false, item: null, error: '', noKey: false, question, src });
@@ -1876,8 +1849,7 @@
       const box = $('[data-b="janswer"]', root);
       if (!box) return;
       const j = C.ja;
-      const note = '';
-      if (!j.question) { box.innerHTML = note; return; }
+      if (!j.question) { box.innerHTML = ''; return; }
       const expect = j.item ? j.item.expect.replace(/^\s*attendu\s*:\s*/i, '') : '';
       box.innerHTML = `<section class="ex-janswer${j.error ? ' is-err' : ''}" aria-busy="${j.busy}">
         <div class="ex-janswer-head">${icon('sparkles')}<b>Réponse attendue (IA)</b><span class="pill pill-xs">Pour le jury</span></div>
@@ -1886,7 +1858,7 @@
         ${j.error ? `<p class="ex-janswer-err">${esc(j.error)}</p><div class="row">${j.noKey ? `<button type="button" class="btn btn-sm" data-go="#/settings">${icon('gear')}<span>Réglages</span></button>` : ''}<button type="button" class="btn btn-sm" data-act="ja-retry">${icon('refresh')}<span>Réessayer</span></button></div>` : ''}
         ${j.item && expect ? `<p class="ex-janswer-exp"><b>Attendu :</b> ${esc(expect)}</p>` : ''}
         ${j.item && j.item.model ? `<p class="ex-janswer-model"><b>Réponse modèle :</b> <span lang="en">${esc(j.item.model)}</span></p>` : ''}
-      </section>${note}`;
+      </section>`;
     }
     function readQuestion() {
       const q = s.interview.current;
@@ -2196,18 +2168,27 @@
     root.innerHTML = `<div class="screen ex ex-console ex-solo" data-phase="${s.phase}">
       <header class="topbar ex-cbar">
         <button type="button" class="icon-btn" data-go="#/eleve" aria-label="Retour" title="Retour">${icon('chevron-left')}</button>
-        <div class="ex-cbar-title"><b>Entraînement</b><small>${themeChip(s.subject.theme, 'ex-theme-sm')}</small></div>
+        <div class="ex-cbar-title"><b>Entraînement</b><small data-b="theme">${themeChip(s.subject.theme, 'ex-theme-sm')}</small></div>
         <div data-b="steps" class="ex-cbar-steps"></div>
         <div data-b="clock-box"></div>
       </header>
       <span class="sr-only" data-b="clock-sr" aria-live="polite"></span>
+      <span class="sr-only" data-b="qa-sr" aria-live="polite"></span>
       <div data-b="main" class="ex-solo-main"></div>
     </div>`;
+    C.say = (t) => {
+      const el = $('[data-b="qa-sr"]', root);
+      if (!el) return;
+      el.textContent = '';
+      setTimeout(() => { if (C.alive) el.textContent = t; }, 60);
+    };
+    const didStep = (id) => (id === 'prep' ? !!s.prep.startedAt : id === 'expose' ? !!s.expose.startedAt : id === 'interview' ? !!s.interview.startedAt || arr(s.interview.asked).length > 0 : !!s.evaluation || s.phase === 'done');
 
     C.paint = () => {
       if (!C.alive) return;
       $('.ex-console', root).dataset.phase = s.phase;
-      $('[data-b="steps"]', root).innerHTML = stepper(SOLO_STEPS, s.phase === 'done' ? 'review' : s.phase, C.reached);
+      $('[data-b="steps"]', root).innerHTML = s.quick ? '' : stepper(SOLO_STEPS, s.phase === 'done' ? 'review' : s.phase, C.reached, didStep);
+      $('[data-b="theme"]', root).innerHTML = themeChip(s.subject.theme, 'ex-theme-sm');
       $('[data-b="clock-box"]', root).innerHTML = clockHTML(clockOf(s, true));
       const main = $('[data-b="main"]', root);
       if (s.phase === 'prep') { main.innerHTML = soloPrepHTML(); bindNotes(); }
@@ -2233,8 +2214,8 @@
           <div class="ex-phase-head"><span class="tile tile-blue">${icon('clock')}</span><div><h2 class="h2">Préparation</h2><p class="muted small">Sans dictionnaire. Rédigez seulement l’intro, la transition et la conclusion ; le reste en mots-clés.</p></div></div>
           <div class="ex-prep-bar" style="--p:0" aria-hidden="true"><i></i></div>
           <div class="row ex-prep-ctl">
-            <div class="seg" role="radiogroup" aria-label="Durée">${DURATIONS.map((m) => `<button type="button" role="radio" aria-checked="${m === dur}" class="${m === dur ? 'on' : ''}" data-dur="${m}">${m} min</button>`).join('')}</div>
-            <label class="row ex-strict"><span class="switch switch-sm"><input type="checkbox" data-f="strict"${strict ? ' checked' : ''}><span></span></span><span class="small">Mode strict (fiches cachées)</span></label>
+            <div class="seg" role="radiogroup" aria-label="Durée">${SOLO_DURATIONS.map((m) => `<button type="button" role="radio" aria-checked="${m === dur}" class="${m === dur ? 'on' : ''}" data-dur="${m}">${m} min</button>`).join('')}</div>
+            <label class="row ex-strict"><span class="switch switch-sm"><input type="checkbox" data-f="help"${strict ? '' : ' checked'}><span></span></span><span class="small">Afficher l’aide-mémoire</span></label>
           </div>
           ${started ? '' : `<button type="button" class="btn btn-primary btn-xl ex-wide" data-act="prep-start">${icon('play')}<span>Découvrir le sujet et lancer le chrono</span></button>`}
         </section>
@@ -2267,8 +2248,8 @@
         ta.closest('.ex-draft-f').classList.toggle('is-long', notesLong(ta.dataset.note, ta.value));
         C.saveSoon();
       }));
-      const sw = $('[data-f="strict"]', root);
-      if (sw) sw.addEventListener('change', () => { s.prep.strict = sw.checked; C.saveNow(); C.paint(); toast(sw.checked ? 'Mode strict : fiches cachées, comme le jour J.' : 'Aide-mémoire affiché.', 'info'); });
+      const sw = $('[data-f="help"]', root);
+      if (sw) sw.addEventListener('change', () => { s.prep.strict = !sw.checked; C.saveNow(); C.paint(); });
     }
 
     function notesRecap() {
@@ -2325,14 +2306,16 @@
       C.saveSoon();
     }
 
+    function keyBadHTML() {
+      return `<div class="ex-keybad" role="note"><p>${icon('warning', 'ico-inline')}<span>Votre clé IA est refusée : la correction est coupée.</span></p><button type="button" class="btn btn-sm" data-go="#/settings">${icon('gear')}<span>Corriger la clé</span></button></div>`;
+    }
     function soloJuryHTML() {
-      const target = Number(s.interview.target) || 6;
       const done = arr(s.interview.asked).length;
-      const locked = done > 0 || C.qa.state !== 'idle' || C.qa.busy;
+      const canChange = s.quick && !done;
       return `<section class="card card-pad ex-phase">
-        <div class="ex-phase-head"><span class="tile tile-green">${icon('person2')}</span><div><h2 class="h2">Jury IA</h2><p class="muted small">Les questions sont lues en anglais. Répondez à voix haute, puis « J’ai fini » : la correction arrive après chaque réponse.${s.expose.startedAt ? '' : ' Sans exposé, le jury s’appuie sur l’article et sur vos réponses.'}</p></div></div>
-        ${locked ? '' : `<div class="row ex-prep-ctl"><span class="small muted">Nombre de questions</span><div class="seg" role="radiogroup" aria-label="Nombre de questions">${[5, 6, 7, 8].map((n) => `<button type="button" role="radio" aria-checked="${n === target}" class="${n === target ? 'on' : ''}" data-target="${n}">${n}</button>`).join('')}</div></div>`}
-        <div class="ex-qa" data-b="qa" aria-live="polite"></div>
+        <div class="ex-phase-head"><span class="tile tile-green">${icon('person2')}</span><div class="grow"><h2 class="h2">Questions du jury</h2><p class="muted small">Écoutez la question, répondez à voix haute, puis « J’ai fini ».</p></div>
+          ${canChange ? `<button type="button" class="btn btn-quiet btn-sm" data-act="change-subject">${icon('refresh')}<span>Changer de sujet</span></button>` : ''}</div>
+        <div class="ex-qa" data-b="qa"></div>
       </section>
       <details class="card card-pad ex-details ex-solo-subj"${s.expose.startedAt || done ? '' : ' open'}><summary><b>Le sujet</b> <span class="small muted">· relire l’article et la question</span></summary>${subjectHTML(s.subject)}</details>
       ${done ? `<details class="card card-pad ex-details"><summary><b>Questions précédentes (${done})</b></summary><ol class="ex-asked">${s.interview.asked.map((a) => `<li><span lang="en">${esc(a.en)}</span>${a.score != null ? `<small>${fmtNum(a.score)}/10</small>` : ''}</li>`).join('')}</ol></details>` : ''}`;
@@ -2343,42 +2326,68 @@
       const qa = C.qa;
       const target = Number(s.interview.target) || 6;
       const done = arr(s.interview.asked).length;
+      const finishBtn = done && done < target ? `<button type="button" class="btn btn-ghost" data-act="to-review">${icon('star')}<span>Terminer et voir mon bilan</span></button>` : '';
+      const noKeyNote = aiOn() ? '' : keyRefused() ? keyBadHTML() : '<p class="small muted">Sans clé IA : pas de correction.</p>';
       if (qa.busy) { box.innerHTML = `<div class="ex-q-loading"><span class="spinner"></span><span>${esc(qa.busyText || 'Un instant…')}</span></div>`; return; }
       if (qa.state === 'idle') {
         box.innerHTML = done >= target
-          ? `<div class="ex-qa-end"><h3 class="h3">Entretien terminé</h3><p class="muted">${done} questions. Place au bilan.</p><button type="button" class="btn btn-primary btn-lg" data-act="to-review">${icon('star')}<span>Voir mon bilan</span></button></div>`
-          : `<button type="button" class="btn btn-primary btn-xl ex-wide" data-act="qa-next">${icon('play')}<span>${done ? 'Question suivante' : 'Commencer l’entretien'}</span></button>${aiReady() ? '' : '<p class="small muted">Sans clé IA : questions du corrigé, sans correction automatique.</p>'}`;
+          ? `<div class="ex-qa-end"><h3 class="h3">C’est terminé</h3><p class="muted">${done} questions. Place au bilan.</p><button type="button" class="btn btn-primary btn-lg" data-act="to-review">${icon('star')}<span>Voir mon bilan</span></button></div>`
+          : `<div class="ex-actions-row"><button type="button" class="btn btn-primary btn-xl" data-act="qa-next">${icon('play')}<span>${done ? 'Question suivante' : 'Commencer'}</span></button>${finishBtn}</div>${noKeyNote}`;
         return;
       }
       const q = qa.q || {};
+      const asking = qa.state === 'answer';
       const qHTML = `<div class="ex-q-solo">
-        <div class="row"><span class="pill pill-xs">Question ${done + (qa.state === 'feedback' ? 0 : 1)}/${target}</span><span class="spacer"></span>
-          <button type="button" class="btn btn-sm" data-act="qa-repeat">${icon('refresh')}<span>Répéter la question</span></button>
-          <button type="button" class="btn btn-sm" data-act="qa-slow">${icon('speaker')}<span>Plus lentement</span></button></div>
-        ${qa.showText || qa.state === 'feedback' ? `<p class="ex-q-en" lang="en">${esc(q.en)}</p>` : `<button type="button" class="btn btn-quiet btn-sm" data-act="qa-show">${icon('eye')}<span>Afficher le texte de la question</span></button>`}
+        <div class="row"><span class="pill pill-xs">Question ${done + (asking ? 1 : 0)}/${target}</span><span class="spacer"></span>
+          ${asking ? `<button type="button" class="btn btn-sm" data-act="qa-repeat">${icon('refresh')}<span>Répéter la question</span></button>
+          <button type="button" class="btn btn-sm" data-act="qa-slow">${icon('speaker')}<span>Plus lentement</span></button>` : ''}</div>
+        ${qa.showText || !asking ? `<p class="ex-q-en" lang="en">${esc(q.en)}</p>` : `<button type="button" class="btn btn-quiet btn-sm" data-act="qa-show">${icon('eye')}<span>Afficher le texte de la question</span></button>`}
       </div>`;
-      if (qa.state === 'answer') {
+      if (asking && qa.empty) {
         box.innerHTML = `${qHTML}
-          <div class="ex-rec"><span class="ex-live-dot ${C.listening ? 'on' : ''}" aria-hidden="true"></span><b>${C.listening ? 'À vous : j’écoute votre réponse…' : 'Micro inactif : tapez votre réponse'}</b></div>
+          <div class="ex-empty-ans" role="alert"><p>${icon('mic', 'ico-inline')}<b>Je n’ai rien entendu. Vérifiez le micro puis réessayez.</b></p></div>
+          <div class="ex-actions-row">${SR() ? `<button type="button" class="btn btn-primary btn-lg" data-act="qa-retry">${icon('mic')}<span>Réessayer</span></button>` : ''}
+          <button type="button" class="btn${SR() ? ' btn-ghost' : ' btn-primary btn-lg'}" data-act="qa-type">${icon('keyboard')}<span>Répondre par écrit</span></button></div>`;
+        return;
+      }
+      if (asking) {
+        box.innerHTML = `${qHTML}
+          <div class="ex-rec"><span class="ex-live-dot ${C.listening ? 'on' : ''}" aria-hidden="true"></span><b>${C.listening ? 'À vous : j’écoute votre réponse…' : SR() ? 'Réponse écrite (vous pouvez repasser au micro)' : 'Réponse écrite'}</b></div>
           ${C.listening ? '' : `<textarea class="input" rows="4" data-f="answer" lang="en" placeholder="Your answer…" aria-label="Votre réponse">${esc(qa.answer)}</textarea>`}
           <div class="ex-actions-row"><button type="button" class="btn btn-primary btn-lg" data-act="qa-done">${icon('check')}<span>J’ai fini</span></button>
-          ${C.listening ? `<button type="button" class="btn btn-ghost" data-act="qa-type">${icon('keyboard')}<span>Répondre par écrit</span></button>` : SR() ? `<button type="button" class="btn btn-ghost" data-act="qa-mic">${icon('mic')}<span>Répondre au micro</span></button>` : ''}</div>`;
+          ${C.listening ? `<button type="button" class="btn btn-ghost" data-act="qa-type">${icon('keyboard')}<span>Répondre par écrit</span></button>` : SR() ? `<button type="button" class="btn btn-ghost" data-act="qa-mic">${icon('mic')}<span>Répondre au micro</span></button>` : ''}
+          ${finishBtn}</div>`;
         return;
       }
       const fb = qa.fb;
       box.innerHTML = `${qHTML}
         <div class="ex-answer"><b>Votre réponse</b><p lang="en">${esc(qa.answer || '—')}</p></div>
-        ${fb ? `<div class="ex-fb">
+        ${fb ? `<div class="ex-fb" tabindex="-1">
           <div class="ex-fb-head">${ring(fb.score, 10)}<div><b>${esc(fb.score >= 8 ? 'Très bonne réponse' : fb.score >= 6 ? 'Bonne base' : fb.score >= 4 ? 'À étoffer' : 'À retravailler')}</b>${arr(fb.good).length ? `<ul class="ex-list small">${fb.good.map((g) => `<li>${esc(g)}</li>`).join('')}</ul>` : ''}</div></div>
           ${arr(fb.fixes).length ? `<ul class="ex-errlist">${fb.fixes.map((x) => `<li><span class="ex-said" lang="en">${esc(x.said)}</span><span class="ex-arrow">→</span><span class="ex-better" lang="en">${esc(x.better)}</span>${x.rule ? `<small>${esc(x.rule)}</small>` : ''}</li>`).join('')}</ul>` : ''}
-          ${fb.better ? `<div class="ex-model"><div class="row"><b>Réponse modèle (B2)</b><span class="spacer"></span>${sayBtn(fb.better)}</div><p lang="en">${esc(fb.better)}</p></div>` : ''}
-        </div>` : `<p class="small muted">${aiReady() ? 'Correction indisponible pour cette réponse.' : 'Correction automatique : ajoutez une clé IA dans les Réglages.'}</p>`}
-        <div class="ex-actions-row">${done >= target ? `<button type="button" class="btn btn-primary btn-lg" data-act="to-review">${icon('star')}<span>Voir mon bilan</span></button>` : `<button type="button" class="btn btn-primary btn-lg" data-act="qa-next">${icon('chevron-right')}<span>Question suivante</span></button>`}</div>`;
+          ${fb.better ? `<div class="ex-model"><div class="row"><b>Réponse modèle</b><span class="spacer"></span>${sayBtn(fb.better)}</div><p lang="en">${esc(fb.better)}</p></div>` : ''}
+        </div>` : keyRefused() ? keyBadHTML() : `<p class="small muted">${aiReady() ? 'Correction indisponible pour cette réponse.' : 'Sans clé IA : pas de correction.'}</p>`}
+        <div class="ex-actions-row">${done >= target ? `<button type="button" class="btn btn-primary btn-lg" data-act="to-review">${icon('star')}<span>Voir mon bilan</span></button>` : `<button type="button" class="btn btn-primary btn-lg" data-act="qa-next">${icon('chevron-right')}<span>Question suivante</span></button>${finishBtn}`}</div>`;
+    }
+    function changeSubject() {
+      if (arr(s.interview.asked).length) return;
+      if (C.ctrl) C.ctrl.abort();
+      stopSpeak();
+      stopRec();
+      const pick = pickRandom(store.subjects(), s.subjectId);
+      if (!pick) return;
+      s.subject = normSubject(pick);
+      s.subjectId = s.subject.id;
+      s.interview.turns = []; s.interview.startedAt = null; s.alarms = {};
+      Object.assign(C.qa, { state: 'idle', q: null, answer: '', fb: null, busy: false, empty: false });
+      C.saveNow();
+      C.paint();
+      C.say('Nouveau sujet : ' + s.subject.title);
+      qaNext();
     }
     async function qaNext() {
       const qa = C.qa;
       if (qa.busy) return;
-      const ctl = $('.ex-prep-ctl', root); if (ctl) ctl.remove();
       const used = new Set(arr(s.interview.asked).map((x) => x.en));
       const turns = arr(s.interview.turns);
       const last = turns[turns.length - 1];
@@ -2388,7 +2397,7 @@
       }
       let q = null;
       const p = arr(s.subject.corrige.juryQuestions).filter((x) => x && x.en && !used.has(x.en));
-      const useAI = aiReady() && aiHas('juryQuestion') && (!p.length || (used.size >= 2 && used.size % 2 === 0));
+      const useAI = aiOn() && aiHas('juryQuestion') && (!p.length || (used.size >= 2 && used.size % 2 === 0));
       if (!useAI && p.length) q = { en: p[0].en, fr: p[0].fr };
       if (!q && useAI) {
         qa.busy = true; qa.busyText = 'Le jury prépare sa question…'; paintQA();
@@ -2397,7 +2406,7 @@
           const kinds = ['next', 'deeper', 'news', 'opinion', 'clarify'];
           const r = await S.examAI.juryQuestion({ subject: s.subject, expose: exposeText(s), interview: arr(s.interview.turns).map((t) => ({ who: t.who, text: t.text })), asked: [...used], kind: kinds[used.size % kinds.length], signal: ctrl.signal });
           if (r && r.en) q = { en: str(r.en), fr: str(r.fr) };
-        } catch (e) { if (isAbort(e)) { qa.busy = false; return; } toast('Question IA indisponible : question de secours.', 'warn'); }
+        } catch (e) { if (isAbort(e)) { qa.busy = false; return; } if (e && e.code === 'KEY') markKeyRefused(); }
         finally { qa.busy = false; }
       }
       if (!C.alive || s.phase !== 'interview') return;
@@ -2407,11 +2416,12 @@
     }
     async function askQuestion(q, again) {
       const qa = C.qa;
-      qa.q = q; qa.answer = ''; qa.fb = null; qa.state = 'answer';
+      qa.q = q; qa.answer = ''; qa.fb = null; qa.state = 'answer'; qa.empty = false;
       if (!s.interview.startedAt) s.interview.startedAt = Date.now();
       if (!again) s.interview.turns.push({ who: 'jury', text: q.en, t: Date.now() - s.interview.startedAt });
       C.saveSoon();
       paintQA();
+      C.say(`Question ${arr(s.interview.asked).length + 1}`);
       await speakQuestion(q, {});
     }
     async function speakQuestion(q, o) {
@@ -2430,12 +2440,14 @@
       const ta = $('[data-f="answer"]', root);
       if (ta) qa.answer = ta.value.trim() || qa.answer;
       qa.answer = str(qa.answer).trim();
+      if (!qa.answer) { qa.empty = true; paintQA(); C.say('Je n’ai rien entendu.'); return; }
+      qa.empty = false;
       s.interview.turns.push({ who: 'student', text: qa.answer || '(no answer)', t: Date.now() - (s.interview.startedAt || Date.now()) });
       const entry = { en: qa.q.en, fr: qa.q.fr || '', answer: qa.answer };
       s.interview.asked.push(entry);
       qa.state = 'feedback'; qa.fb = null;
       C.saveNow();
-      if (aiReady() && aiHas('answerFeedback') && qa.answer) {
+      if (aiOn() && aiHas('answerFeedback')) {
         qa.busy = true; qa.busyText = 'Correction de votre réponse…'; paintQA();
         const ctrl = C.ctrl = new AbortController();
         try {
@@ -2446,10 +2458,14 @@
             entry.score = qa.fb.score; entry.feedback = qa.fb;
             C.saveNow();
           }
-        } catch (e) { if (!isAbort(e)) toast('Correction impossible : ' + errMsg(e), 'err'); }
+        } catch (e) { if (!isAbort(e) && e && e.code === 'KEY') markKeyRefused(); }
         finally { qa.busy = false; }
       }
-      if (C.alive) { C.paint(); }
+      if (!C.alive) return;
+      C.paint();
+      const fbEl = $('.ex-fb', root);
+      if (fbEl) { fbEl.focus({ preventScroll: true }); C.say(`Correction prête : ${fmtNum(qa.fb.score)} sur 10.`); }
+      else C.say('Réponse enregistrée.');
     }
 
     root.addEventListener('click', (e) => {
@@ -2469,18 +2485,16 @@
       }
       const dur = e.target.closest('[data-dur]');
       if (dur) { s.prep.durMin = Number(dur.dataset.dur); C.saveNow(); C.paint(); return; }
-      const tg = e.target.closest('[data-target]');
-      if (tg) { s.interview.target = Number(tg.dataset.target); C.saveNow(); C.paint(); return; }
       const b = e.target.closest('[data-act]');
       if (!b || b.disabled) return;
       const act = b.dataset.act;
       if (reviewClicks(C, $('[data-b="main"]', root), act)) return;
-      if (act === 'prep-start') { s.prep.startedAt = Date.now(); C.saveNow(); C.paint(); chime('soft'); toast(`Chrono lancé : ${s.prep.durMin} minutes. Bon courage !`, 'ok'); }
+      if (act === 'prep-start') { s.prep.startedAt = Date.now(); C.saveNow(); C.paint(); chime('soft'); }
       else if (act === 'to-expose') C.setPhase('expose');
       else if (act === 'expose-start') {
         s.expose.startedAt = Date.now(); s.expose.endedAt = null; s.expose.transcript = [];
         if (SR()) startRec('', exposeOnText);
-        C.saveNow(); C.paint(); toast('Exposé lancé : 15 minutes.', 'ok');
+        C.saveNow(); C.paint();
       }
       else if (act === 'mic-pause') { const t = stopRec(); if (t) exposeOnText(t); C.paint(); }
       else if (act === 'mic-resume') { startRec(exposeText(s), exposeOnText); C.paint(); }
@@ -2506,7 +2520,12 @@
       else if (act === 'qa-repeat') { if (C.qa.q) speakQuestion(C.qa.q, {}); }
       else if (act === 'qa-slow') { if (C.qa.q) speakQuestion(C.qa.q, { rate: 0.78 }); }
       else if (act === 'qa-show') { C.qa.showText = true; setPrefs({ showQText: true }); paintQA(); }
-      else if (act === 'qa-type') { C.qa.answer = stopRec() || C.qa.answer; setPrefs({ typeAnswers: true }); paintQA(); }
+      else if (act === 'qa-type') {
+        C.qa.answer = stopRec() || C.qa.answer; C.qa.empty = false; setPrefs({ typeAnswers: true }); paintQA();
+        const ta = $('[data-f="answer"]', root); if (ta) ta.focus();
+      }
+      else if (act === 'qa-retry') { C.qa.empty = false; C.qa.answer = ''; startRec('', (f) => { C.qa.answer = f; }); paintQA(); }
+      else if (act === 'change-subject') changeSubject();
       else if (act === 'qa-mic') { setPrefs({ typeAnswers: false }); const ta = $('[data-f="answer"]', root); startRec(ta ? ta.value : '', (f) => { C.qa.answer = f; }); paintQA(); }
       else if (act === 'to-review') { if (C.ctrl) C.ctrl.abort(); stopSpeak(); stopRec(); C.qa.state = 'idle'; C.setPhase('review'); }
     });
@@ -2519,6 +2538,7 @@
     });
     C.paint();
     C.checkGap();
+    if (AUTO_ASK === s.id) { AUTO_ASK = ''; if (s.phase === 'interview' && !arr(s.interview.turns).length) qaNext(); }
     setCurrent({
       wantsWake: true,
       flush() { s.lastSeenAt = Date.now(); C.saveNow(); },
@@ -2689,7 +2709,6 @@
       const total = $$('[data-day]', root).length, n = $$('[data-day]:checked', root).length;
       if (c.checked) toast(n === total ? 'Tout est prêt. Bonne chance !' : `${n}/${total} cochés.`, n === total ? 'ok' : 'info');
     });
-    markTab('fiches');
     setCurrent({});
   }
 
@@ -2700,10 +2719,10 @@
     const avg = vals.length ? round1(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
     const best = vals.length ? Math.max(...vals) : null;
     root.innerHTML = `<div class="screen ex ex-history">
-      ${topbar({ title: 'Historique', sub: `${list.length} séance${list.length > 1 ? 's' : ''}`, back: '#/' })}
-      ${vals.length ? `<section class="card card-pad ex-trend">
+      ${topbar({ title: 'Historique', sub: list.length ? `${list.length} séance${list.length > 1 ? 's' : ''}` : '', back: '#/' })}
+      ${vals.length >= 2 ? `<section class="card card-pad ex-trend">
         <div class="ex-trend-stats"><span><small>Dernière</small><b>${fmtNum(vals[vals.length - 1])}<i>/20</i></b></span><span><small>Moyenne</small><b>${fmtNum(avg)}<i>/20</i></b></span><span><small>Meilleure</small><b>${fmtNum(best)}<i>/20</i></b></span></div>
-        <div class="ex-trend-chart">${sparkSVG(vals, 320, 80) || '<p class="small muted">La courbe apparaît à partir de 2 notes.</p>'}</div>
+        <div class="ex-trend-chart">${sparkSVG(vals, 320, 80)}</div>
       </section>` : ''}
       ${list.length ? `<div class="list ex-hlist">${list.map((s) => {
         const e = s.evaluation;
@@ -2715,7 +2734,7 @@
           </button>
           <button type="button" class="icon-btn icon-btn-sm" data-del="${esc(s.id)}" aria-label="Supprimer cette séance" title="Supprimer">${icon('trash')}</button>
         </div>`;
-      }).join('')}</div>` : `<div class="empty card"><div class="empty-ic">${icon('clock')}</div><h2 class="h3">Aucune séance</h2><p class="muted">Lancez un oral blanc (jury) ou un entraînement solo.</p><div class="row center"><button type="button" class="btn btn-primary" data-go="#/oral/new">${icon('person2')}<span>Faire passer l’oral</span></button><button type="button" class="btn" data-go="#/eleve">${icon('graduation')}<span>M’entraîner</span></button></div></div>`}
+      }).join('')}</div>` : `<div class="empty card"><div class="empty-ic">${icon('clock')}</div><h2 class="h3">Aucune séance pour l’instant.</h2><div class="row center"><button type="button" class="btn btn-primary" data-go="#/eleve">${icon('sparkles')}<span>Entraînement avec l’IA</span></button><button type="button" class="btn" data-go="#/appel">${icon('video')}<span>Entraînement sur Teams</span></button></div></div>`}
     </div>`;
     root.addEventListener('click', async (e) => {
       const o = e.target.closest('[data-open]');
@@ -2727,7 +2746,6 @@
         if (S.app && S.app.refresh) S.app.refresh(); else renderHistory(root);
       }
     });
-    markTab('home');
     setCurrent({});
   }
 
@@ -2745,10 +2763,73 @@
     });
   }
 
+  function renderTeamsStart(root) {
+    const link = teamsValid(prefs().studentTeams || '');
+    const start = (subj) => {
+      const s = newSession('call', subj);
+      store.save(s);
+      go(sessionHash(s));
+    };
+    root.innerHTML = `<div class="screen ex ex-chooser lv-start-screen">
+      ${topbar({ title: 'Entraînement sur Teams', sub: 'Avec un jury en visio', back: '#/' })}
+      <p class="ex-call-intro muted">Le jury vous donne le sujet pendant l’appel. Importez-le ici, puis lancez l’assistant : il écoute les questions et affiche une réponse en anglais, en grand.</p>
+      <ol class="lv-steps">
+        <li class="card card-pad lv-step">
+          <span class="lv-step-n" aria-hidden="true">1</span>
+          <div class="lv-step-b"><h2 class="h3">Rejoindre l’appel</h2>
+            ${teamsFieldHTML(link, { id: 'ex-call-link', joinLabel: 'Rejoindre', label: 'Lien Teams (ou Meet)', hint: link ? 'Lien enregistré : « Rejoindre » ouvre la réunion.' : 'Collez le lien reçu par mail ou par message.' })}
+          </div>
+        </li>
+        <li class="card card-pad lv-step is-main">
+          <span class="lv-step-n" aria-hidden="true">2</span>
+          <div class="lv-step-b"><h2 class="h3">Importer le sujet</h2>
+            <p class="muted">Collez le texte, ou ajoutez le fichier ou une photo du sujet envoyé par le jury.</p>
+            <button type="button" class="btn btn-primary btn-lg" data-act="import">${icon('import')}<span>Importer le sujet</span></button>
+          </div>
+        </li>
+        <li class="card card-pad lv-step">
+          <span class="lv-step-n" aria-hidden="true">3</span>
+          <div class="lv-step-b"><h2 class="h3">Lancer l’assistant</h2>
+            <p class="muted">${isMobileDevice() ? 'Un seul bouton : l’écoute démarre et la réponse s’affiche en grand. Posez le téléphone juste sous la caméra.' : 'Un seul bouton : l’écoute démarre et la réponse s’affiche dans une fenêtre à placer juste sous la caméra.'}</p>
+          </div>
+        </li>
+      </ol>
+      <p class="lv-jury"><button type="button" class="btn btn-quiet btn-sm" data-go="#/oral/new">${icon('person2')}<span>Je suis le jury</span></button></p>
+    </div>`;
+    function setHint(v) {
+      const l = teamsValid(v);
+      const box = $('[data-b="teams"]', root), hint = $('[data-b="teams-hint"]', root);
+      if (box) { box.classList.toggle('is-bad', !l && !!str(v).trim()); box.classList.toggle('is-set', !!l); }
+      if (l) setPrefs({ studentTeams: l });
+      if (hint) hint.textContent = l ? `Lien ${meetingApp(l)} enregistré : « Rejoindre » ouvre la réunion.` : str(v).trim() ? LINK_BAD : 'Collez le lien reçu par mail ou par message.';
+      return l;
+    }
+    root.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-act]');
+      if (!b) return;
+      if (b.dataset.act === 'import') importSubjectSheet(start);
+      else if (b.dataset.act === 'teams-join') {
+        const f = $('[data-f="teams"]', root);
+        const v = f ? f.value.trim() : '';
+        if (!v) { toast('Collez d’abord le lien Teams ou Meet reçu par mail ou message.', 'warn'); if (f) f.focus(); return; }
+        const l = setHint(v);
+        if (l && f) f.value = l;
+        openTeams(v);
+      }
+    });
+    root.addEventListener('change', (e) => {
+      const f = e.target.closest && e.target.closest('[data-f="teams"]');
+      if (!f) return;
+      const l = setHint(f.value);
+      if (l) f.value = l;
+    });
+    setCurrent({});
+  }
+
   function renderCall(root, s) {
     const C = baseController(root, s);
     const call = s.call;
-    const R = { lock: null, ctrl: null, req: null, item: null, busy: false, partial: '', float: null, jury: [], checkedAt: 0 };
+    const R = { ctrl: null, req: null, item: null, busy: false, partial: '', float: null, jury: [], err: '', errKind: '', warn: '' };
     const L = createListen(C, {
       call: true, prefKey: 'callListenPreset',
       roleOf: (who, split) => (split ? (who === 'me' ? 'student' : 'jury') : 'mixed'),
@@ -2756,16 +2837,30 @@
       onStop: () => { closeFloat(); C.wantsWake = false; keepAwake(false); if (C.alive) paintLive(); }
     });
     C.L = L;
-    const isOpen = () => true;
+    const desk = !isMobileDevice();
+    const canFull = () => desk && !!document.fullscreenEnabled;
+    // PC ≥ 1100 px : aides en grand à gauche, colonne qui défile à droite (voir live.css).
+    const WIDE_MQ = '(min-width: 1100px) and (min-height: 600px)';
+    const wide = () => desk && !!(window.matchMedia && window.matchMedia(WIDE_MQ).matches);
+    const isFull = () => !!document.fullscreenElement && document.fullscreenElement === $('[data-b="live"]', root);
     const isQ = (t) => { try { return aiHas('isJuryQuestion') ? !!S.examAI.isJuryQuestion(t) : /\?\s*$/.test(t); } catch (e) { return false; } };
     const shown = () => R.item || call.answers[call.answers.length - 1] || null;
     document.body.classList.add('ex-focus');
 
     root.innerHTML = `<div class="screen ex ex-call">
-      ${topbar({ title: 'Appel d’entraînement', sub: s.subject.title, back: '#/' })}
-      <div class="ex-call-grid">
-        <div class="ex-call-col">
-          <section class="card card-pad ex-live" data-b="live" aria-live="polite"></section>
+      ${topbar({ title: 'Entraînement sur Teams', sub: s.subject.title, back: '#/' })}
+      <div class="lv-body">
+        <section class="card ex-live lv-stage" data-b="live" aria-live="polite"></section>
+        <aside class="lv-side" aria-label="Appel, son, sujet et historique">
+          <section class="card card-pad ex-call-meet">
+            <div class="card-head"><h2 class="h3">Rejoindre l’appel</h2></div>
+            ${teamsFieldHTML(s.teamsLink, { id: 'ex-call-link', joinLabel: 'Rejoindre', label: 'Lien Teams (ou Meet)', hint: s.teamsLink ? 'Lien enregistré pour cet appel.' : undefined })}
+          </section>
+          <section class="card card-pad ex-call-listen" data-b="listen-card">
+            <div class="card-head"><h2 class="h3">Son de l’appel</h2></div>
+            <div data-b="listen"></div>
+          </section>
+          <details class="card card-pad ex-details ex-call-subject"><summary><b>Sujet</b><span class="small muted" lang="en"> · ${esc(s.subject.title)}</span></summary>${subjectHTML(s.subject)}</details>
           <section class="card card-pad ex-call-hist">
             <div class="card-head"><h2 class="h3">Historique de l’appel</h2><span class="spacer"></span><span class="badge" data-b="hist-n">0</span></div>
             <div data-b="hist"></div>
@@ -2774,62 +2869,158 @@
               <button type="button" class="btn" data-act="end">${icon('stop')}<span>Terminer l’appel</span></button>
             </div>
           </section>
-        </div>
-        <div class="ex-call-col">
-          <section class="card card-pad ex-call-meet">
-            <div class="card-head"><h2 class="h3">Réunion</h2></div>
-            ${teamsFieldHTML(s.teamsLink, { id: 'ex-call-link', joinLabel: 'Ouvrir', hint: s.teamsLink ? 'Lien enregistré pour cet appel.' : undefined })}
-          </section>
-          <section class="card card-pad ex-call-listen">
-            <div class="card-head"><h2 class="h3">Écoute</h2></div>
-            <div data-b="listen"></div>
-          </section>
-          <details class="card card-pad ex-details ex-call-subject"><summary><b>Sujet</b><span class="small muted" lang="en"> · ${esc(s.subject.title)}</span></summary>${subjectHTML(s.subject)}</details>
-        </div>
+        </aside>
       </div>
     </div>`;
 
+    const NO_KEY_START = 'Pas de clé IA : l’assistant ne peut pas proposer de réponse. Ajoutez une clé dans Réglages.';
+    // Erreur précise + bouton d'action adapté à la cause.
+    const KEY_CODES = ['NO_KEY', 'KEY', 'KEY_ERROR'];
+    function listenKind(code) {
+      code = str(code);
+      if (KEY_CODES.includes(code)) return 'key';
+      if (/^MIC_/.test(code)) return 'mic';
+      if (/^PC_AUDIO/.test(code)) return 'pc';
+      if (code === 'ENDED') return 'lost';
+      return 'listen';
+    }
+    function errHTML(msg, kind, float) {
+      const b = (act, ic, label, primary) => `<button type="button" class="btn btn-sm${primary ? ' btn-primary' : ''}" data-act="${act}">${icon(ic)}<span>${label}</span></button>`;
+      const btns = [];
+      if (kind === 'key') btns.push(float ? b('settings', 'gear', 'Réglages') : `<button type="button" class="btn btn-sm" data-go="#/settings">${icon('gear')}<span>Réglages</span></button>`);
+      else if (kind === 'mic') { btns.push(b('assist', 'refresh', 'Réessayer', true)); if (!float) btns.push(b('pick-src', 'speaker', 'Changer de source')); }
+      else if (kind === 'pc') { btns.push(b('use-mic', 'mic', 'Utiliser le micro', true)); btns.push(b('assist', 'refresh', 'Réessayer')); }
+      else if (kind === 'lost') btns.push(b('assist', 'mic', 'Relancer l’assistant', true));
+      else if (kind === 'listen') btns.push(b('assist', 'refresh', 'Réessayer'));
+      else if (kind === 'answer') btns.push(b('retry', 'refresh', 'Réessayer'));
+      return `<div class="ex-live-err lv-err" role="alert">${icon('warning', 'ico-inline')}<span>${esc(msg)}</span>${btns.length ? `<span class="lv-err-btns">${btns.join('')}</span>` : ''}</div>`;
+    }
+    function warnHTML() {
+      return R.warn && L.A.on ? `<p class="lv-warn" role="status">${icon('info', 'ico-inline')}<span>${esc(R.warn)}</span></p>` : '';
+    }
+    function statusHTML(busy) {
+      const on = L.A.on;
+      const label = L.A.starting ? 'Démarrage…' : on ? 'J’écoute…' : 'Assistant arrêté';
+      return `<span class="lv-status${on ? ' on' : ''}"><span class="ex-live-dot${on ? ' on' : ''}" aria-hidden="true"></span><b>${label}</b></span>${busy ? '<span class="pill pill-xs pill-accent">Réponse en cours…</span>' : ''}`;
+    }
+    // Mot-clé « expression (traduction) » → expression en gras, traduction en dessous.
+    function kwHTML(k) {
+      const m = str(k).match(/^(.+?)\s*\(([^()]+)\)\s*$/);
+      return m ? `<span class="pill lv-kw-i"><b lang="en">${esc(m[1])}</b><span class="lv-kw-fr" lang="fr">${esc(m[2])}</span></span>` : `<span class="pill lv-kw-i"><b lang="en">${esc(k)}</b></span>`;
+    }
+    function toolsHTML(float, a) {
+      const t = [];
+      if (a) {
+        t.push(`<button type="button" class="btn btn-sm" data-act="shorter" title="Réponse plus courte">${icon('text-size')}<span>Plus court</span></button>`);
+        t.push(`<button type="button" class="btn btn-sm" data-act="retry" title="Nouvelle réponse">${icon('refresh')}<span>Réessayer</span></button>`);
+      }
+      if (!float && L.A.on) {
+        t.push(`<button type="button" class="btn btn-sm${R.float ? ' on' : ''}" data-act="float" aria-pressed="${!!R.float}" title="Garder la réponse au premier plan, au-dessus de Teams">${icon('pip')}<span>Fenêtre flottante</span></button>`);
+        if (canFull()) t.push(`<button type="button" class="btn btn-sm${isFull() ? ' on' : ''}" data-act="full" aria-pressed="${isFull()}" title="Réponse en plein écran (Échap pour sortir)">${icon('eye')}<span>${isFull() ? 'Quitter le plein écran' : 'Plein écran'}</span></button>`);
+        t.push(`<button type="button" class="btn btn-sm" data-act="listen-stop">${icon('stop')}<span>Arrêter</span></button>`);
+      }
+      return t.length ? `<div class="ex-live-actions lv-tools">${t.join('')}</div>` : '';
+    }
     function liveHTML(float) {
       const a = shown();
-      const live = R.busy && R.item === a;
-      const head = `<div class="ex-live-head"><span class="ex-live-dot${L.A.on ? ' on' : ''}" aria-hidden="true"></span><b>${L.A.on ? 'En direct' : 'Écoute arrêtée'}</b>${live ? '<span class="pill pill-xs pill-accent">Réponse en cours…</span>' : ''}</div>`;
-      const interim = `<p class="ex-live-interim" data-b="interim" lang="en">${esc(L.A.interim)}</p>`;
-      if (!a) {
-        const msg = !aiHas('liveAnswer') ? OLD_AI : L.A.on ? 'J’écoute l’appel : la question du jury et une réponse s’affichent ici.' : 'Lancez l’écoute (carte « Écoute »), puis rejoignez l’appel : la question du jury et une réponse s’affichent ici.';
-        return `${head}<p class="ex-live-empty">${esc(msg)}</p>${interim}`;
+      const busy = R.busy && R.item === a;
+      const interim = `<p class="ex-live-interim lv-interim" data-b="interim" lang="en">${esc(L.A.interim)}</p>`;
+      const listenErr = !L.A.on && !L.A.starting && L.A.state === 'error' && L.A.error ? errHTML(L.A.error, listenKind(L.A.errorCode), float) : '';
+      const startErr = R.err ? errHTML(R.err, R.errKind, float) : '';
+      if (!aiHas('liveAnswer')) return `<div class="lv-empty">${errHTML(OLD_AI, '', float)}</div>`;
+      if (!L.A.on && !L.A.starting && !a) {
+        return `<div class="lv-start">
+          <span class="lv-start-ic" aria-hidden="true">${icon('waveform')}</span>
+          <h2 class="lv-start-t">Assistant en direct</h2>
+          <p class="lv-start-p">Il écoute la question du jury et affiche une réponse en anglais à lire en regardant la caméra.</p>
+          <button type="button" class="btn btn-primary btn-lg lv-go" data-act="assist">${icon('mic')}<span>Lancer l’assistant</span></button>
+          ${startErr || listenErr}
+          <p class="lv-tip">${icon('video', 'ico-inline')}<span>${desk ? 'Placez la fenêtre flottante juste sous la caméra.' : 'Posez le téléphone juste sous la caméra.'}</span></p>
+        </div>`;
       }
-      return `${head}
-        <div class="ex-live-q"><span class="ex-live-l">Question du jury</span><p class="ex-live-en" lang="en">${esc(a.question)}</p><p class="ex-live-fr" data-b="fr">${esc(a.fr)}</p></div>
-        <div class="ex-live-a"><span class="ex-live-l">Réponse IA</span>
-          <p class="ex-live-ans${live ? ' is-streaming' : ''}" lang="en" data-b="ans">${esc(live ? R.partial : a.text)}</p>
-          ${!live && arr(a.keyWords).length ? `<div class="ex-live-kw" lang="en" aria-label="Mots clés">${a.keyWords.map((k) => `<span class="pill">${esc(k)}</span>`).join('')}</div>` : ''}
-          ${!live && a.error ? `<p class="ex-live-err" role="alert">${esc(a.error)}${a.error === NO_KEY_LIVE && !float ? ` <button type="button" class="btn btn-quiet btn-sm" data-go="#/settings">Réglages</button>` : ''}</p>` : ''}
+      const head = `<div class="ex-live-head lv-head">${statusHTML(busy)}<span class="spacer"></span>${!float && isFull() ? `<span class="lv-esc">Échap pour sortir du plein écran</span>` : ''}${!L.A.on && !L.A.starting && !float ? `<button type="button" class="btn btn-primary btn-sm" data-act="assist">${icon('mic')}<span>Relancer l’assistant</span></button>` : ''}</div>${warnHTML()}`;
+      if (!a) {
+        return `${head}<div class="lv-empty">
+          <p class="ex-live-empty lv-wait">${float ? 'La réponse s’affichera ici dès que le jury pose une question.' : 'Dès que le jury pose une question, la réponse s’affiche ici, en grand.'}</p>
+          ${float || R.float ? `<p class="lv-tip">${icon('video', 'ico-inline')}<span>${float ? 'Glissez cette fenêtre juste sous la caméra.' : 'Fenêtre flottante ouverte : placez-la juste sous la caméra.'}</span></p>` : ''}
+        </div>${startErr || listenErr}${toolsHTML(float, null)}${interim}`;
+      }
+      const headA = float ? `<div class="ex-live-head lv-head">${statusHTML(busy)}<span class="spacer"></span>${toolsHTML(true, a)}</div>${warnHTML()}` : head;
+      const fr = a.fr ? `<p class="lv-fr"><span class="lv-l">Traduction</span> <span class="ex-live-fr" data-b="fr">${esc(a.fr)}</span></p>` : `<p class="lv-fr" hidden><span class="lv-l">Traduction</span> <span class="ex-live-fr" data-b="fr"></span></p>`;
+      return `${headA}
+        <div class="ex-live-q lv-q"><span class="lv-l">Question entendue</span> <span class="ex-live-en" lang="en">${esc(a.question)}</span></div>
+        <div class="ex-live-a lv-a">
+          <span class="lv-l lv-al">Réponse proposée</span>
+          <p class="ex-live-ans lv-ans${busy ? ' is-streaming' : ''}" lang="en" data-b="ans">${esc(busy ? R.partial : a.text)}</p>
         </div>
-        <div class="ex-live-actions">
-          <button type="button" class="btn btn-sm" data-act="shorter">${icon('text-size')}<span>Plus court</span></button>
-          <button type="button" class="btn btn-sm" data-act="retry">${icon('refresh')}<span>Réessayer</span></button>
-          ${float ? '' : `<button type="button" class="btn btn-sm${R.float ? ' on' : ''}" data-act="float"${L.A.on ? '' : ' disabled'} title="${L.A.on ? 'Garder la réponse au premier plan pendant l’appel' : 'Disponible pendant l’écoute'}">${icon('pip')}<span>Fenêtre flottante</span></button>`}
-        </div>${interim}`;
+        ${!busy && a.error ? errHTML(a.error, a.errKey || a.error === NO_KEY_LIVE ? 'key' : '', float) : ''}
+        <div class="lv-sub">
+          ${fr}
+          ${!busy && arr(a.keyWords).length ? `<div class="ex-live-kw lv-kw" aria-label="Mots-clés"><span class="lv-l">Mots-clés</span>${a.keyWords.map(kwHTML).join('')}</div>` : ''}
+        </div>
+        ${startErr || listenErr}
+        ${float ? '' : toolsHTML(false, a)}${interim}`;
     }
-    const views = () => [root].concat(R.float ? [R.float.box] : []);
+    const views = () => [$('[data-b="live"]', root)].concat(R.float ? [R.float.box] : []).filter(Boolean);
+    function fitAns(box) {
+      const el = box && $('[data-b="ans"]', box);
+      const wrap = el && el.parentElement;
+      if (!el || !wrap) return;
+      const inFloat = box === (R.float && R.float.box);
+      const full = !inFloat && box.matches && box.matches(':fullscreen');
+      if (!(inFloat || full || wide())) { el.style.fontSize = ''; return; }
+      const w = wrap.clientWidth || 600;
+      const cap = Math.max(18, Math.min(inFloat ? 60 : full ? 96 : 60, w / (full ? 11 : 13)));
+      const id = (shown() || {}).id || '';
+      let hi = cap;
+      if (R.busy && box.dataset.fitFor === id && parseFloat(el.style.fontSize)) hi = Math.min(cap, parseFloat(el.style.fontSize));
+      box.dataset.fitFor = id;
+      let lo = 15;
+      el.style.fontSize = hi + 'px';
+      if (wrap.scrollHeight <= wrap.clientHeight + 1) return;
+      for (let i = 0; i < 8; i++) {
+        const mid = (lo + hi) / 2;
+        el.style.fontSize = mid + 'px';
+        if (wrap.scrollHeight <= wrap.clientHeight + 1) lo = mid; else hi = mid;
+      }
+      el.style.fontSize = Math.floor(lo) + 'px';
+    }
     function paintLive() {
       if (!C.alive) return;
       const box = $('[data-b="live"]', root);
-      box.classList.toggle('is-locked', !!R.lock && !isOpen());
+      box.classList.toggle('is-on', L.A.on);
       box.innerHTML = liveHTML(false);
-      if (R.float) { if (isOpen()) R.float.box.innerHTML = liveHTML(true); else closeFloat(); }
+      fitAns(box);
+      if (R.float) {
+        R.float.box.classList.toggle('is-on', L.A.on);
+        R.float.box.innerHTML = liveHTML(true);
+        fitAns(R.float.box);
+      }
     }
-    function paintAnswer() { views().forEach((v) => { const el = $('[data-b="ans"]', v); if (el) el.textContent = R.partial; }); }
-    C.paintInterim = () => { views().forEach((v) => { const el = $('[data-b="interim"]', v); if (el) el.textContent = isOpen() ? L.A.interim : ''; }); };
+    function paintAnswer() {
+      views().forEach((v) => { const el = $('[data-b="ans"]', v); if (el) { el.textContent = R.partial; fitAns(v); } });
+    }
+    C.paintInterim = () => {
+      if (L.A.interim) warmAI();
+      views().forEach((v) => { const el = $('[data-b="interim"]', v); if (el) el.textContent = L.A.interim; });
+    };
+    // Connexion à l'IA ouverte d'avance (DNS + TLS) : au lancement et dès que le jury parle.
+    let warmedAt = 0;
+    function warmAI() {
+      const t = Date.now();
+      if (t - warmedAt < 10000) return;
+      warmedAt = t;
+      try { if (S.ai && S.ai.warm) S.ai.warm('live'); } catch (e) {  }
+    }
     C.paintListen = () => {
       const b = $('[data-b="listen"]', root);
-      if (b) b.innerHTML = listenHTML(L.A, { startLabel: 'Écouter l’appel', onLabel: 'J’écoute l’appel (en-GB)', blocked: '' });
+      if (b) b.innerHTML = listenHTML(L.A, { startLabel: 'Écouter l’appel', onLabel: 'J’écoute l’appel (en-GB)', quiet: true });
       paintLive();
     };
     function paintHist() {
       if (!C.alive) return;
       const box = $('[data-b="hist"]', root);
-      const list = isOpen() ? call.answers : [];
+      const list = call.answers;
       $('[data-b="hist-n"]', root).textContent = list.length;
       const cur = shown();
       box.innerHTML = list.length ? `<ol class="ex-chist">${list.slice().reverse().map((a) => `<li class="ex-chist-item${a === cur ? ' is-current' : ''}" data-id="${esc(a.id)}">
@@ -2838,22 +3029,8 @@
           ${a.text ? `<p class="ex-chist-a"><span class="ex-chist-l">Réponse IA</span><span lang="en">${esc(a.text)}</span></p>` : a.error ? `<p class="ex-chist-err">${esc(a.error)}</p>` : R.busy && R.item === a ? '<p class="small muted">Réponse en cours…</p>' : ''}
           ${a.mine ? `<p class="ex-chist-mine"><span class="ex-chist-l">Ce que j’ai dit</span><span lang="en">${esc(a.mine)}</span></p>` : ''}
         </li>`).join('')}</ol>`
-        : `<p class="small muted">${isOpen() ? 'Les questions du jury, les réponses IA et ce que vous avez dit s’affichent ici.' : 'L’historique se remplit pendant l’appel, avec l’aide en direct.'}</p>`;
+        : '<p class="small muted">Les questions du jury, les réponses IA et ce que vous avez dit s’affichent ici.</p>';
     }
-
-    function applyLock(st) {
-      const was = R.lock;
-      R.lock = st;
-      if (!st.open) {
-        if (R.ctrl) R.ctrl.abort();
-        Object.assign(R, { req: null, ctrl: null, item: null, busy: false, partial: '' });
-        if (L.A.on || L.A.starting) L.stop({ drainMs: 0 });
-        closeFloat();
-      }
-      if (C.alive && (!was || was.open !== st.open)) { C.paintListen(); paintHist(); }
-      return st.open;
-    }
-    const recheck = () => S.examLock.check().then((st) => (C.alive ? applyLock(st) : false));
 
     function callExpose() {
       const out = [];
@@ -2881,9 +3058,6 @@
       item.error = '';
       paintLive(); paintHist();
       const drop = () => { call.answers = call.answers.filter((x) => x !== item); if (R.item === item) R.item = null; };
-      const st = await S.examLock.check();
-      if (R.req !== req || !C.alive) return;
-      if (!st.open) { drop(); applyLock(st); C.saveSoon(); return; }
       try {
         if (!aiHas('liveAnswer')) throw new Error(OLD_AI);
         if (!item.fr && aiHas('translate')) {
@@ -2891,7 +3065,10 @@
             fr = str(fr).trim();
             if (!fr || !C.alive || !call.answers.includes(item)) return;
             item.fr = fr; C.saveSoon();
-            if (shown() === item) views().forEach((v) => { const el = $('[data-b="fr"]', v); if (el) el.textContent = fr; });
+            if (shown() === item) views().forEach((v) => {
+              const el = $('[data-b="fr"]', v);
+              if (el) { el.textContent = fr; if (el.parentElement) el.parentElement.hidden = false; fitAns(v); }
+            });
             paintHist();
           }).catch(() => {  });
         }
@@ -2914,8 +3091,9 @@
         R.jury = R.jury.filter((x) => x.at > born);
       } catch (e) {
         if (R.req !== req || !C.alive || isAbort(e)) return;
-        if (e && e.code === 'LOCKED') { drop(); applyLock({ open: false, source: 'server', now: Date.now() }); return; }
-        item.error = e && e.code === 'NO_KEY' ? NO_KEY_LIVE : errMsg(e);
+        const keyBad = !!(e && KEY_CODES.includes(e.code));
+        item.error = e && e.code === 'NO_KEY' ? NO_KEY_LIVE : keyBad ? (errMsg(e) || 'Clé IA refusée : corrigez-la dans Réglages.') : errMsg(e);
+        item.errKey = keyBad;
       } finally {
         if (R.req === req) { Object.assign(R, { busy: false, ctrl: null, partial: '' }); if (C.alive) { paintLive(); paintHist(); } }
         C.saveSoon();
@@ -2923,7 +3101,7 @@
     }
 
     C.onHeard = (role, text) => {
-      if (!text || !C.alive || !isOpen()) return;
+      if (!text || !C.alive) return;
       L.A.interim = '';
       C.paintInterim();
       const now = Date.now();
@@ -2932,7 +3110,9 @@
       const jury = role === 'jury' || (role === 'mixed' && q);
       call.turns.push({ who: jury ? 'jury' : 'student', text, t: now - call.startedAt });
       if (call.turns.length > 400) call.turns.splice(0, call.turns.length - 400);
+      if (R.warn) { R.warn = ''; paintLive(); }
       if (jury) {
+        warmAI();
         R.jury = R.jury.filter((x) => now - x.at < JOIN_MS).concat({ text, at: now });
         if (q) ask(R.jury.map((x) => x.text).join(' '));
       } else {
@@ -2944,14 +3124,23 @@
 
     async function startListen() {
       if (L.A.on || L.A.starting) return;
-      const ok = await recheck();
-      if (!C.alive) return;
-      if (!ok) { toast('L’écoute de l’appel est indisponible.', 'warn', { duration: 7000 }); return; }
       call.endedAt = null;
+      R.warn = '';
       await L.start();
+      if (!C.alive) return;
       if (L.A.on && !call.startedAt) call.startedAt = Date.now();
+      if (!L.A.on) closeFloat();
       C.saveSoon();
       paintLive();
+    }
+    function assist() {
+      if (L.A.on || L.A.starting) return;
+      R.err = ''; R.errKind = '';
+      if (!aiHas('liveAnswer')) { R.err = OLD_AI; paintLive(); return; }
+      if (!aiReady()) { R.err = NO_KEY_START; R.errKind = 'key'; paintLive(); return; }
+      warmAI();
+      startListen();
+      if (desk && !R.float && (L.A.starting || L.A.on)) openFloat();
     }
     async function endCall() {
       if (L.A.on || L.A.starting) await L.stop({ drainMs: 0 });
@@ -2963,18 +3152,28 @@
       toast('Appel terminé : questions et réponses restent dans l’historique (export .md possible).', 'ok', { duration: 6000 });
     }
 
+    // 760 × 420 : sur l'écran 1536 × 830, la fenêtre tient sous la caméra (moitié de la largeur,
+    // moitié de la hauteur) et laisse voir le jury ; une réponse de 90 mots y reste lisible à 60-70 cm.
+    const FLOAT_W = 760, FLOAT_H = 420;
     function toggleFloat() {
       if (R.float) { closeFloat(); paintLive(); return; }
-      if (!isOpen() || !L.A.on) { toast('Lancez d’abord l’écoute : la fenêtre flottante suit l’appel en direct.', 'info'); return; }
+      if (!L.A.on) { toast('Lancez d’abord l’assistant : la fenêtre flottante suit l’appel en direct.', 'info'); return; }
+      openFloat();
+    }
+    function openFloat() {
       const pip = window.documentPictureInPicture;
       let req = null;
-      if (pip && typeof pip.requestWindow === 'function') { try { req = pip.requestWindow({ width: 420, height: 520 }); } catch (e) { req = null; } }
+      if (pip && typeof pip.requestWindow === 'function') { try { req = pip.requestWindow({ width: FLOAT_W, height: FLOAT_H }); } catch (e) { req = null; } }
       if (req) req.then(setupFloat, () => floatPopup());
       else floatPopup();
     }
     function floatPopup() {
       let w = null;
-      try { w = window.open('', 'aidevisio-appel', 'popup=yes,width=420,height=560'); } catch (e) { w = null; }
+      // Pop-up de secours : placée d'office en haut au centre de l'écran, juste sous la caméra.
+      const sc = window.screen || {};
+      const left = Math.max(0, Math.round((sc.availLeft || 0) + ((sc.availWidth || FLOAT_W) - FLOAT_W) / 2));
+      const top = Math.max(0, Math.round(sc.availTop || 0));
+      try { w = window.open('', 'aidevisio-appel', `popup=yes,width=${FLOAT_W},height=${FLOAT_H + 40},left=${left},top=${top}`); } catch (e) { w = null; }
       if (!w) { toast('Fenêtre flottante bloquée : autorisez les fenêtres pop-up pour ce site, ou utilisez Chrome ou Edge récent.', 'warn', { duration: 9000 }); return; }
       try {
         w.document.open();
@@ -2984,7 +3183,7 @@
       setupFloat(w);
     }
     function setupFloat(w) {
-      if (!C.alive || !isOpen() || !L.A.on) { try { w.close(); } catch (e) {  } return; }
+      if (!C.alive || !(L.A.on || L.A.starting)) { try { w.close(); } catch (e) {  } return; }
       const doc = w.document;
       try { doc.title = 'Aide Visio · appel'; } catch (e) {  }
       copyStylesTo(doc);
@@ -2992,10 +3191,12 @@
       if (document.documentElement.dataset.theme) doc.documentElement.dataset.theme = document.documentElement.dataset.theme;
       const scale = document.documentElement.style.getPropertyValue('--font-scale');
       if (scale) doc.documentElement.style.setProperty('--font-scale', scale);
-      doc.body.className = 'pip-body ex-float-body';
-      doc.body.innerHTML = '<div class="ex-float"><section class="ex-live" data-b="float" aria-live="polite"></section></div>';
+      doc.body.className = 'pip-body ex-float-body lv-float-body';
+      doc.body.innerHTML = '<div class="ex-float lv-float"><section class="ex-live lv-stage lv-fit" data-b="float" aria-live="polite"></section></div>';
       R.float = { win: w, box: doc.querySelector('[data-b="float"]') };
       doc.addEventListener('click', (e) => { const b = e.target.closest('[data-act]'); if (b && !b.disabled) onAct(b.dataset.act); });
+      let t = 0;
+      w.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => { if (R.float && R.float.win === w) fitAns(R.float.box); }, 60); });
       const gone = () => { if (R.float && R.float.win === w) { R.float = null; if (C.alive) paintLive(); } };
       w.addEventListener('pagehide', gone);
       w.addEventListener('unload', gone);
@@ -3007,6 +3208,31 @@
       R.float = null;
       try { f.win.close(); } catch (e) {  }
     }
+    function toggleFull() {
+      const box = $('[data-b="live"]', root);
+      if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
+      if (!box || !box.requestFullscreen) { toast('Plein écran indisponible dans ce navigateur.', 'warn'); return; }
+      box.requestFullscreen().catch(() => toast('Plein écran indisponible dans ce navigateur.', 'warn'));
+    }
+    const onFs = () => { if (C.alive) paintLive(); };
+    document.addEventListener('fullscreenchange', onFs);
+    // Échap sort du plein écran (Chrome le fait déjà ; filet si le focus est dans un champ).
+    const onKey = (e) => { if (e.key === 'Escape' && isFull()) document.exitFullscreen().catch(() => {}); };
+    document.addEventListener('keydown', onKey);
+    let fitT = 0;
+    const onResize = () => { clearTimeout(fitT); fitT = setTimeout(() => { if (C.alive) fitAns($('[data-b="live"]', root)); }, 80); };
+    window.addEventListener('resize', onResize);
+    // Son de l'appel : coupures et reprises (Son du PC, micro coupé, onglet muet…) affichées dans les aides.
+    const WARN_OFF = /_BACK$|_RESUMED$|^ONLINE$/;
+    const offInfo = S.audio && S.audio.on ? S.audio.on('info', (ev) => {
+      if (!ev || !C.alive || !L.A.on) return;
+      const code = str(ev.code);
+      const msg = str(ev.message) || (S.audio.message && S.audio.message(code)) || '';
+      if (WARN_OFF.test(code)) { if (R.warn) { R.warn = ''; paintLive(); } return; }
+      if (!/^warn/.test(str(ev.kind)) || !msg) return;
+      R.warn = msg;
+      paintLive();
+    }) : null;
 
     function setLink(value, announce) {
       const v = str(value).trim();
@@ -3022,10 +3248,18 @@
     }
 
     function onAct(act) {
-      if (act === 'listen-start') startListen();
-      else if (act === 'listen-stop') L.stop().then(() => toast('Écoute arrêtée.', 'info'));
-      else if (act === 'shorter' || act === 'retry') { const a = shown(); if (a && isOpen()) ask(a.question, { item: a, shorter: act === 'shorter' }); }
+      if (act === 'assist') assist();
+      else if (act === 'listen-start') startListen();
+      else if (act === 'listen-stop') L.stop().then(() => toast('Assistant arrêté.', 'info'));
+      else if (act === 'shorter' || act === 'retry') { const a = shown(); if (a) ask(a.question, { item: a, shorter: act === 'shorter' }); }
       else if (act === 'float') toggleFloat();
+      else if (act === 'full') toggleFull();
+      else if (act === 'settings') go('#/settings');
+      else if (act === 'use-mic') { L.A.preset = 'haut-parleur'; setPrefs({ callListenPreset: L.A.preset }); C.paintListen(); assist(); }
+      else if (act === 'pick-src') {
+        const card = $('[data-b="listen-card"]', root);
+        if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); const o = $('.ex-src-opt.on, .ex-src-opt', card); if (o) o.focus({ preventScroll: true }); }
+      }
       else if (act === 'export') downloadText(exportMd(s), `appel-entrainement-${s.createdAt.slice(0, 10)}.md`);
       else if (act === 'end') endCall();
       else if (act === 'teams-join') {
@@ -3051,28 +3285,25 @@
       if (link && f.value !== link) f.value = link;
     });
 
-    const offTick = onTick(() => {
-      if (!C.alive || !R.lock || R.lock.open || Date.now() - R.checkedAt < 60000) return;
-      R.checkedAt = Date.now();
-      recheck();
-    });
-
     C.paintListen();
     paintHist();
     L.probe();
-    recheck();
-    markTab('home');
     setCurrent({
       get wantsWake() { return L.A.on || L.A.starting; },
       flush() { C.saveNow(); },
       busy() { return L.A.on || L.A.starting; },
       async canLeave() {
         if (!L.A.on && !L.A.starting) return true;
-        return confirmSheet({ title: 'Quitter l’appel ?', text: 'L’écoute de l’appel est active : elle sera arrêtée. Questions et réponses restent enregistrées.', okLabel: 'Quitter', cancelLabel: 'Rester' });
+        return confirmSheet({ title: 'Quitter l’appel ?', text: 'L’assistant écoute encore : il sera arrêté. Questions et réponses restent enregistrées.', okLabel: 'Quitter', cancelLabel: 'Rester' });
       },
       leave() {
         C.alive = false;
-        offTick();
+        document.removeEventListener('fullscreenchange', onFs);
+        document.removeEventListener('keydown', onKey);
+        window.removeEventListener('resize', onResize);
+        clearTimeout(fitT);
+        if (offInfo) { try { offInfo(); } catch (e) {  } }
+        if (isFull()) document.exitFullscreen().catch(() => {});
         if (R.ctrl) R.ctrl.abort();
         closeFloat();
         C.saveNow();
@@ -3110,7 +3341,7 @@
     renderSolo(root, s);
   });
   const callDef = def((root, p) => {
-    if (!p.id || p.id === 'new') return renderChooser(root, 'call');
+    if (!p.id || p.id === 'new') return renderTeamsStart(root);
     const s = store.get(p.id);
     if (!s) { root.innerHTML = notFoundHTML(); setCurrent({}); return; }
     fixSession(s);
@@ -3122,7 +3353,7 @@
   }
 
   S.exam = Object.assign(S.exam || {}, {
-    homeDef, store, countdown, speakEn, normSubject, newSession, exportMd,
+    homeDef, store, speakEn, normSubject, newSession, exportMd,
     defs: { oral: oralDef, sujet: def(renderSujet), eleve: eleveDef, appel: callDef, fiches: def(renderFiches), historique: def(renderHistory) }
   });
 

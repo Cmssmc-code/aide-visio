@@ -51,7 +51,8 @@ function examFakes() {
       'question' in o ? { question: o.question, shorter: !!o.shorter, expose: String(o.expose || ''), turns: (o.turns || []).length, subject: o.subject && o.subject.id } : {}, extra));
   };
   const LIVE = [
-    [/europe/i, 'European exporters would be hit too, so the EU could answer with its own tariffs on American goods.'],
+    [/long run/i, 'In the long run, I believe tariffs do more harm than good. First, importers usually pass the extra cost on to consumers, so households lose purchasing power. Second, firms with global supply chains face higher costs and greater uncertainty, which delays investment. For example, after the 2025 US tariffs, several carmakers postponed new factories. However, some domestic producers may gain market share in the short term. So overall, I would say the costs outweigh the benefits.'],
+    [/europe/i,'European exporters would be hit too, so the EU could answer with its own tariffs on American goods.'],
     [/tariff/i, 'I think the new tariffs will raise prices for consumers and disrupt the supply chain of many firms.'],
     [/.*/, 'In my view, the article raises a key question for companies and for consumers.']
   ];
@@ -62,6 +63,7 @@ function examFakes() {
       log('liveAnswer', a);
       try {
         if (!M.aiReady) { await wait(M.delay / 2, a.signal); throw Object.assign(new Error('Pas de clé IA.'), { code: 'NO_KEY' }); }
+        if (M.liveError) { await wait(M.delay / 2, a.signal); throw Object.assign(new Error(M.liveError.msg), { code: M.liveError.code }); }
         if (/hear me/i.test(a.question)) { await wait(M.delay, a.signal); return { text: '', keyWords: [], skip: true }; }
         const full = a.shorter ? 'Tariffs mean higher prices and a weaker supply chain.' : LIVE.find(([re]) => re.test(a.question))[1];
         const words = full.split(' ');
@@ -69,7 +71,7 @@ function examFakes() {
           await wait(M.delay, a.signal);
           if (a.onDelta) a.onDelta(words.slice(0, Math.ceil(words.length * k / 3)).join(' '));
         }
-        return { text: full, keyWords: ['tariffs', 'supply chain'], skip: false };
+        return { text: full, keyWords: ['tariffs (droits de douane)', 'supply chain (chaîne d’approvisionnement)'], skip: false };
       } catch (e) {
         if (e && e.name === 'AbortError') M.liveAborted = (M.liveAborted || 0) + 1;
         throw e;
@@ -94,6 +96,7 @@ function examFakes() {
     },
     async answerFeedback(a) {
       log('answerFeedback', a); await wait(M.delay, a.signal);
+      if (M.keyBad) throw Object.assign(new Error('Clé Gemini refusée : recopiez-la en entier dans Réglages.'), { code: 'KEY' });
       return { score: 7, good: ['Réponse claire et structurée.'], fixes: [{ said: 'I am agree', better: 'I agree', rule: 'agree est un verbe' }], better: 'I agree with the author to some extent. Banks have a strong advantage: trust. However, stablecoins are cheaper and faster.' };
     },
     async evaluate(a) {
@@ -118,13 +121,15 @@ function examFakes() {
     },
     async translate(t, o) { log('translate', null, { text: t, to: o && o.to }); return 'FR: ' + t; },
     async generateSubject() { throw new Error('non utilisé'); },
-    async subjectFromText() { throw new Error('non utilisé'); }
+    async subjectFromText() { return null; }
   };
   const handlers = M.audio.handlers;
   const audio = {
     get running() { return M.audio.started > M.audio.stopped; },
     on(ev, fn) { (handlers[ev] = handlers[ev] || new Set()).add(fn); return () => handlers[ev].delete(fn); },
-    async start(preset, opts) { M.audio.started++; M.audio.preset = preset; M.audio.opts = opts; setTimeout(() => M.emit('state', { state: 'listening' }), 30); return {}; },
+    async start(preset, opts) {
+      if (M.startError) { await wait(30); throw Object.assign(new Error(M.startError.msg), { code: M.startError.code }); }
+      M.audio.started++; M.audio.preset = preset; M.audio.opts = opts; setTimeout(() => M.emit('state', { state: 'listening' }), 30); return {}; },
     async stop() { M.audio.stopped = M.audio.started; },
     message: () => '',
     status: () => ({ running: audio.running, channels: [] })
@@ -176,28 +181,30 @@ const horizontalOverflow = (page) => page.evaluate(() => document.documentElemen
 const emit = (page, ev, payload) => page.evaluate(([e, p]) => window.__examFakes.emit(e, p), [ev, payload]);
 const callsOf = (page, fn) => page.evaluate((f) => window.__examFakes.calls.filter((c) => c.fn === f), fn);
 
-const LOCKED_DATE = 'Wed, 11 Nov 2026 09:00:00 GMT';
-const OPEN_DATE = 'Fri, 13 Nov 2026 08:00:00 GMT';
-async function serverDate(ctx, date) {
-  const probe = { n: 0, date, fail: false };
-  await ctx.route(/sw\.js\?now=/, (r) => {
-    probe.n++;
-    return probe.fail ? r.abort() : r.fulfill({ status: 200, headers: { date: probe.date, 'cache-control': 'no-store' }, body: '' });
-  });
-  return probe;
+const ARTICLE = [
+  'Trade wars are back on the agenda',
+  'Washington has announced a new wave of tariffs on imported steel, cars and electronics, arguing that domestic factories need protection from unfair foreign competition and that jobs will come back home.',
+  'Economists warn that consumers will end up paying more, because importers usually pass the extra cost on to shoppers, while companies with global supply chains face higher costs and greater uncertainty.',
+  'Europe is preparing its answer: Brussels could target American goods with its own duties, a move that might escalate into a wider trade conflict between long-standing allies.',
+  'Question: To what extent will the new tariffs hurt consumers?'
+].join('\n\n');
+async function importSubject(page) {
+  await page.click('[data-act="import"]');
+  await page.waitForSelector('.sheet-layer:not(.out) #ex-imp-text');
+  await page.fill('#ex-imp-text', ARTICLE);
+  await page.locator('.sheet-layer:not(.out) .sheet-actions button', { hasText: 'Analyser' }).click();
+  await page.waitForSelector('.sheet-layer:not(.out) .ex-preview');
+  await clickSheetAction(page, 'Enregistrer et utiliser');
+  await page.waitForFunction(() => /^#\/appel\/ex-/.test(location.hash));
+  await page.waitForSelector('.ex-call [data-b="live"]');
 }
 async function newCall(page) {
   await open(page, '#/appel');
   await page.waitForSelector('.ex-chooser .ex-call-intro');
-  await page.locator('.ex-sgrid [data-subject]').first().click();
-  await page.waitForSelector('.sheet-layer .ex-paper');
-  await clickSheetAction(page, 'Choisir pour l’appel');
-  await page.waitForFunction(() => /^#\/appel\/ex-/.test(location.hash));
-  await page.waitForSelector('.ex-call [data-b="live"]');
+  await importSubject(page);
   return page.evaluate(() => location.hash.split('/')[2]);
 }
-const waitLocked = (page) => page.waitForSelector('[data-b="live"].is-locked .ex-lock', { timeout: 10000 });
-const waitOpen = (page) => page.waitForSelector('[data-b="live"]:not(.is-locked) .ex-live-head', { timeout: 10000 });
+const waitOpen = (page) => page.waitForSelector('.ex-call [data-b="live"] :is(.lv-start, .ex-live-head)', { timeout: 10000 });
 const liveText = (page, sel) => page.evaluate((s) => { const e = document.querySelector('[data-b="live"] ' + s); return e ? e.textContent.trim() : ''; }, sel);
 
 const srv = await startServer({ port: 0, dir: 'src', quiet: true });
@@ -219,14 +226,17 @@ const { ctx, page } = await makePage(DESK);
 let juryId = '';
 let subjectId = '';
 
-await test('accueil : trois choix, sans date d’examen', async () => {
+await test('accueil : deux choix, onglet Historique, sans date d’examen', async () => {
   await open(page, '#/');
   await page.waitForSelector('.ex-home');
   const tabs = await page.$$eval('#tabbar [data-tab]', (as) => as.filter((a) => !a.hidden && getComputedStyle(a).display !== 'none').map((a) => a.dataset.tab));
-  assert(JSON.stringify(tabs) === '["home","fiches","settings"]', 'onglets visibles : ' + tabs);
+  assert(JSON.stringify(tabs) === '["home","historique","fiches","settings"]', 'onglets visibles : ' + tabs);
   assert(await page.$eval('#tabbar [data-tab="home"]', (a) => a.classList.contains('on')), 'onglet Oral actif');
-  assert((await page.locator('.ex-home .ex-role').count()) === 3, 'trois choix sur l’accueil');
-  for (const go of ['#/eleve', '#/oral/new', '#/historique']) assert(await page.$(`.ex-home .ex-role[data-go="${go}"]`), 'choix ' + go);
+  assert((await page.locator('.ex-home .ex-role').count()) === 2, 'deux choix sur l’accueil');
+  for (const go of ['#/eleve', '#/appel']) assert(await page.$(`.ex-home .ex-role[data-go="${go}"]`), 'choix ' + go);
+  assert(!(await page.$('.ex-home .home-tools')), 'pas de raccourcis en doublon du rail');
+  const rail = await page.$eval('#tabbar [data-tab="historique"]', (a) => { const r = a.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+  assert(rail, 'onglet Historique visible sur PC');
   const home = await page.textContent('.ex-home');
   assert(!/J-\d|UE 218|novembre|jeudi/.test(home), 'aucune mention de l’examen : ' + home.slice(0, 120));
   assert(!(await page.$('.sheet-layer')), 'aucune fenêtre ouverte au démarrage');
@@ -235,7 +245,7 @@ await test('accueil : trois choix, sans date d’examen', async () => {
 });
 
 await test('choix du sujet (jury) : filtre thème, aperçu, lancement', async () => {
-  await page.click('[data-go="#/oral/new"]');
+  await open(page, '#/oral/new');
   await page.waitForSelector('.ex-chooser [data-subject]');
   const n = await page.locator('[data-subject]').count();
   assert(n >= 12, `12 sujets au moins (${n})`);
@@ -413,6 +423,8 @@ await test('console jury · bilan (évaluation IA, ajustement, terminer)', async
 
 await test('historique', async () => {
   await page.waitForSelector('.ex-history .ex-hrow');
+  assert(await page.$eval('#tabbar [data-tab="historique"]', (a) => a.classList.contains('on')), 'onglet Historique actif');
+  assert(!(await page.$('.ex-trend')), 'pas de statistiques avec une seule note');
   const note = await page.textContent('.ex-hrow .ex-hnote');
   assert(/14,5/.test(note), 'note dans l’historique : ' + note);
   await shot(page, '11-historique');
@@ -476,22 +488,23 @@ await ctx.close();
 const M = await makePage(MOBILE);
 const mp = M.page;
 
-await test('élève · tirage au sort et préparation (brouillon, mode strict)', async () => {
+await test('élève · oral complet au hasard et préparation (brouillon, aide-mémoire)', async () => {
   await open(mp, '#/');
   await mp.waitForSelector('.ex-home');
   await shot(mp, '20-mobile-accueil', { both: false, full: true });
   assert((await horizontalOverflow(mp)) <= 0, 'pas de défilement horizontal (mobile)');
   await mp.click('[data-go="#/eleve"]');
-  await mp.waitForSelector('.ex-chooser [data-act="draw"]');
+  await mp.waitForSelector('.ex-chooser [data-act="full-random"]');
   await shot(mp, '21-mobile-eleve-choix', { both: false, full: true });
-  await mp.click('[data-act="draw"]');
-  await mp.waitForSelector('.sheet-layer .ex-draw-card');
-  await shot(mp, '22-mobile-tirage', { both: false });
-  await clickSheetAction(mp, 'C’est parti');
+  await mp.click('[data-act="full-random"]');
   await mp.waitForFunction(() => /^#\/eleve\/ex-/.test(location.hash));
   await mp.waitForSelector('.ex-solo [data-act="prep-start"]');
+  assert(!(await mp.$('.sheet-layer:not(.out)')), 'pas de fenêtre intermédiaire');
   assert(!(await mp.$('.ex-solo .ex-paper')), 'texte caché avant le chrono');
-  await mp.click('[data-dur="10"]');
+  const durs = await mp.$$eval('[data-dur]', (bs) => bs.map((x) => x.dataset.dur).join(','));
+  assert(durs === '60,30', 'durées 60 et 30 min : ' + durs);
+  assert(!(await mp.isChecked('[data-f="help"]')), 'aide-mémoire décoché par défaut');
+  await mp.click('[data-dur="30"]');
   await mp.click('[data-act="prep-start"]');
   await mp.waitForSelector('.ex-solo .ex-paper');
   await mp.fill('[data-note="intro"]', 'This article, published in March 2026, deals with stablecoins.');
@@ -499,8 +512,8 @@ await test('élève · tirage au sort et préparation (brouillon, mode strict)',
   await mp.waitForSelector('[data-nf="summary"].is-long');
   await mp.fill('[data-note="summary"]', 'banks worried • deposits → stablecoins • GENIUS Act');
   await mp.waitForSelector('[data-nf="summary"]:not(.is-long)');
-  assert(!(await mp.$('.ex-help')), 'mode strict : pas d’aide-mémoire');
-  await mp.locator('[data-f="strict"]').uncheck({ force: true });
+  assert(!(await mp.$('.ex-help')), 'aide-mémoire caché par défaut');
+  await mp.locator('[data-f="help"]').check({ force: true });
   await mp.waitForSelector('.ex-help');
   await sleep(1400);
   const s = await session(mp);
@@ -539,11 +552,18 @@ await test('élève · jury IA (question lue, réponse au micro, correction)', a
   await mp.waitForSelector('.ex-fb .ex-ring');
   const ans = await mp.textContent('.ex-answer p');
   assert(/agree/.test(ans), 'réponse captée : ' + ans);
+  assert(await mp.evaluate(() => document.activeElement && document.activeElement.classList.contains('ex-fb')), 'focus sur la correction');
+  assert(!(await mp.$('[data-act="qa-repeat"]')), 'pas de « Répéter » après la réponse');
+  assert(/Terminer et voir mon bilan/.test(await mp.textContent('.ex-qa [data-act="to-review"]')), 'bouton « Terminer et voir mon bilan » dès 1 réponse');
+  assert(!(await mp.$('.ex-qa[aria-live]')) && await mp.$('[data-b="qa-sr"][aria-live]'), 'annonce courte, pas de zone aria-live sur tout le bloc');
+  assert(await mp.$('.ex-step[data-step="prep"].done[aria-label]'), 'étape préparation cochée, avec aria-label');
   await shot(mp, '26-mobile-jury-ia', { both: false, full: true });
   await mp.click('[data-act="qa-next"]');
   await mp.waitForSelector('[data-act="qa-done"]');
   await mp.waitForSelector('[data-act="qa-type"]');
   await mp.click('[data-act="qa-type"]');
+  assert(await mp.evaluate(() => document.activeElement && document.activeElement.dataset.f === 'answer'), 'focus dans le champ après « Répondre par écrit »');
+  assert(/Réponse écrite/.test(await mp.textContent('.ex-qa .ex-rec')), 'texte « Réponse écrite »');
   await mp.fill('[data-f="answer"]', 'Yes, because regulation makes them safer.');
   await mp.click('[data-act="qa-done"]');
   await mp.waitForSelector('.ex-fb');
@@ -570,23 +590,28 @@ await test('élève · rechargement en plein jury IA puis bilan', async () => {
   await shot(mp, '28-mobile-historique', { both: false });
 });
 
-await test('élève · jury IA direct (sans préparation)', async () => {
+await test('élève · jury IA direct (sujet au hasard, sans fenêtre)', async () => {
   await open(mp, '#/eleve');
   await mp.waitForSelector('.ex-jury-ai [data-act="quick-jury"]');
-  assert(await mp.$('.ex-scard.is-hidden-q'), 'titres et questions cachés');
+  assert(!(await mp.$('.ex-scard.is-hidden-q')) && !(await mp.$('[data-f="hide-subjects"]')), 'titres toujours visibles');
+  assert(await mp.$('.ex-scard .ex-scard-title[lang="en"]'), 'titre anglais sur les cartes');
   assert(await mp.$('.ex-scard .pill-ok'), 'badge « Fait le JJ/MM »');
   assert(!(await mp.$('.ex-teams-join')), 'écran IA épuré : pas de champ Teams');
+  assert(!(await mp.isVisible('.ex-more [data-act="import"]')), 'Importer replié');
   await shot(mp, '32-mobile-eleve-accueil', { both: false, full: true });
-  await mp.click('[data-act="quick-jury"]');
-  await mp.waitForSelector('.sheet-layer .ex-draw-card');
-  await clickSheetAction(mp, 'Questions du jury');
-  await mp.waitForSelector('.ex-solo[data-phase="interview"] [data-act="qa-next"]');
-  assert(await mp.$('.ex-solo-subj[open] .ex-paper'), 'sujet affiché pendant le jury IA');
   const spoken0 = await mp.evaluate(() => (window.__spoken || []).length);
-  await mp.click('[data-act="qa-next"]');
-  await mp.waitForSelector('[data-act="qa-done"]');
+  await mp.click('[data-act="quick-jury"]');
+  await mp.waitForSelector('.ex-solo[data-phase="interview"] [data-act="qa-done"]');
+  assert(!(await mp.$('.sheet-layer:not(.out)')), 'pas de fenêtre intermédiaire');
   await mp.waitForFunction((n) => (window.__spoken || []).length > n, spoken0);
-  assert(!(await mp.$('[data-target]')), 'nombre de questions figé après la 1re question');
+  assert(!(await mp.$('.ex-solo .ex-steps')), 'pas de barre d’étapes en direct');
+  assert(!(await mp.$('[data-target]')), 'pas de choix du nombre de questions');
+  assert(/1\/6/.test(await mp.textContent('.ex-q-solo .pill')), 'question 1/6');
+  assert(await mp.$('.ex-solo-subj[open] .ex-paper'), 'sujet affiché pendant le jury IA');
+  const sub0 = (await session(mp)).subjectId;
+  await mp.click('[data-act="change-subject"]');
+  await mp.waitForFunction((id) => { const s = AideVisio.examStore.get(location.hash.split('/')[2]); return s && s.subjectId !== id && document.querySelector('[data-act="qa-done"]'); }, sub0);
+  assert((await session(mp)).interview.turns.length === 1, 'nouvelle question 1 après changement de sujet');
   const mic = await mp.$('[data-act="qa-mic"]');
   if (mic) await mic.click();
   await mp.waitForFunction(() => window.__sr.active.size > 0, null, { timeout: 5000 });
@@ -596,14 +621,76 @@ await test('élève · jury IA direct (sans préparation)', async () => {
   await mp.click('[data-act="qa-done"]');
   await mp.waitForSelector('.ex-fb .ex-ring');
   assert(/banks must adapt/.test(await mp.textContent('.ex-answer p')), 'réponse captée');
+  assert(!(await mp.$('[data-act="change-subject"]')), 'plus de « Changer de sujet » après une réponse');
   await shot(mp, '33-mobile-jury-ia-direct', { both: false, full: true });
-  await mp.click('[data-act="to-review"]').catch(() => {});
-  if (!(await mp.$('[data-act="evaluate"]'))) { await mp.click('[data-step="review"]'); await clickSheetAction(mp, 'Passer'); }
+  // Réponse vide : pas comptée, message clair
+  await mp.click('[data-act="qa-next"]');
+  await mp.waitForSelector('[data-act="qa-done"]');
+  const mic2 = await mp.$('[data-act="qa-mic"]');
+  if (mic2) await mic2.click();
+  await mp.click('[data-act="qa-done"]');
+  await mp.waitForSelector('.ex-empty-ans');
+  assert(/Je n’ai rien entendu/.test(await mp.textContent('.ex-empty-ans')), 'message « rien entendu »');
+  assert((await session(mp)).interview.asked.length === 1, 'réponse vide non comptée');
+  assert(await mp.$('[data-act="qa-retry"]'), 'bouton « Réessayer »');
+  await mp.click('[data-act="qa-type"]');
+  await mp.fill('[data-f="answer"]', 'Banks should cooperate with fintechs.');
+  await mp.click('[data-act="qa-done"]');
+  await mp.waitForSelector('.ex-fb .ex-ring');
+  await mp.click('.ex-qa [data-act="to-review"]');
   await mp.waitForSelector('.ex-review-pre [data-act="evaluate"]');
+  const durs = await mp.textContent('.ex-review-pre .ex-durs');
+  assert(!/Préparation|Exposé|—/.test(durs), 'durées à zéro cachées : ' + durs);
   await mp.click('.ex-review-pre [data-act="evaluate"]');
   await mp.waitForSelector('.ex-score .ex-ring');
   const ev = await mp.evaluate(() => window.__examFakes.lastEvaluate);
   assert(ev && ev.interviewOnly === true, 'évaluation « entretien seul »');
+  assert(/Télécharger le bilan/.test(await mp.textContent('[data-act="export"]')), 'bouton « Télécharger le bilan »');
+});
+
+await test('élève · clé IA refusée : correction coupée, un seul message', async () => {
+  await mp.evaluate(() => { window.__examFakes.keyBad = true; });
+  await open(mp, '#/eleve');
+  await mp.evaluate(() => { window.__examFakes.keyBad = true; });
+  await mp.click('[data-act="quick-jury"]');
+  await mp.waitForSelector('[data-act="qa-done"]');
+  if (await mp.$('[data-act="qa-type"]')) await mp.click('[data-act="qa-type"]');
+  await mp.fill('[data-f="answer"]', 'I think banks will survive.');
+  await mp.click('[data-act="qa-done"]');
+  await mp.waitForSelector('.ex-keybad');
+  assert(/Votre clé IA est refusée : la correction est coupée/.test(await mp.textContent('.ex-keybad')), 'message clé refusée');
+  assert(await mp.$('.ex-keybad [data-go="#/settings"]'), 'bouton « Corriger la clé »');
+  const n1 = (await callsOf(mp, 'answerFeedback')).length;
+  await mp.click('[data-act="qa-next"]');
+  await mp.waitForSelector('[data-act="qa-done"]');
+  if (await mp.$('[data-act="qa-type"]')) await mp.click('[data-act="qa-type"]');
+  await mp.fill('[data-f="answer"]', 'Regulation matters.');
+  await mp.click('[data-act="qa-done"]');
+  await mp.waitForSelector('.ex-keybad');
+  assert((await callsOf(mp, 'answerFeedback')).length === n1, 'plus d’appel à l’IA après le refus');
+  const toasts = await mp.$$eval('.toast', (ts) => ts.filter((t) => /Correction impossible/.test(t.textContent)).length);
+  assert(toasts === 0, 'pas de toast « Correction impossible »');
+  await mp.evaluate(() => { window.__examFakes.keyBad = false; const p = JSON.parse(localStorage.getItem('aidevisio.exam.prefs') || '{}'); delete p.keyRefused; localStorage.setItem('aidevisio.exam.prefs', JSON.stringify(p)); });
+});
+
+await test('élève · sans clé IA : vos réponses, pas de note inventée', async () => {
+  await open(mp, '#/eleve');
+  await mp.evaluate(() => { window.__examFakes.aiReady = false; });
+  await open(mp, '#/eleve');
+  await mp.evaluate(() => { window.__examFakes.aiReady = false; });
+  await mp.click('[data-act="quick-jury"]');
+  await mp.waitForSelector('[data-act="qa-done"]');
+  if (await mp.$('[data-act="qa-type"]')) await mp.click('[data-act="qa-type"]');
+  await mp.fill('[data-f="answer"]', 'Stablecoins are risky for small savers.');
+  await mp.click('[data-act="qa-done"]');
+  await mp.waitForSelector('.ex-qa [data-act="to-review"]');
+  await mp.click('.ex-qa [data-act="to-review"]');
+  await mp.waitForSelector('.ex-myanswers');
+  assert(!(await mp.$('[data-act="manual"]')), 'pas de « Noter à la main »');
+  assert(/Stablecoins are risky/.test(await mp.textContent('.ex-myans')), 'réponse donnée affichée');
+  assert(/Ajoutez une clé IA pour obtenir une note sur 20/.test(await mp.textContent('.ex-review-pre')), 'invitation à ajouter une clé');
+  await shot(mp, '34-mobile-bilan-sans-cle', { both: false, full: true });
+  await mp.evaluate(() => { window.__examFakes.aiReady = true; });
 });
 
 await test('mobile : console jury et fiches sans débordement', async () => {
@@ -651,35 +738,8 @@ let callId = '';
 {
   const A = await makePage(DESK);
   const ap = A.page;
-  const probeA = await serverDate(A.ctx, LOCKED_DATE);
 
-  await test('appel · verrouillé avant le jeudi 12/11 à 14 h (heure du serveur)', async () => {
-    await open(ap, '#/');
-    await ap.waitForSelector('.ex-home .ex-role-call');
-    assert(/dès le jeudi 12 novembre à 14 h/.test(await ap.textContent('.ex-role-call')), 'carte d’accueil : date d’ouverture');
-    await newCall(ap);
-    await waitLocked(ap);
-    const live = await ap.textContent('[data-b="live"]');
-    assert(/Disponible à partir du jeudi 12 novembre à 14 h/.test(live) && /prévu jeudi 12 novembre à 10 h/.test(live), 'texte du verrou : ' + live.slice(0, 140));
-    assert(probeA.n >= 1, 'heure demandée au serveur');
-    const edge = await ap.evaluate(() => [Date.UTC(2026, 10, 12, 12, 59, 59), Date.UTC(2026, 10, 12, 13, 0, 0)].map((t) => AideVisio.examLock.decide(t, 0).open));
-    assert(edge[0] === false && edge[1] === true, 'ouverture jeudi 12/11 à 14 h, Paris : ' + JSON.stringify(edge));
-    assert(await ap.isDisabled('[data-act="listen-start"]'), '« Écouter l’appel » désactivé');
-    assert(/jeudi 12 novembre à 14 h/.test(await ap.textContent('[data-b="listen-status"]')), 'raison affichée dans la carte Écoute');
-    assert(!(await ap.$('[data-act="float"], [data-act="shorter"], [data-act="retry"]')), 'ni fenêtre flottante, ni « Plus court », ni « Réessayer »');
-    for (const who of ['them', 'mixed', 'me']) await emit(ap, 'final', { who, text: 'What do you think about the new tariffs?' });
-    await sleep(500);
-    const n = (await callsOf(ap, 'liveAnswer')).length + (await callsOf(ap, 'translate')).length;
-    assert(n === 0, 'aucun appel liveAnswer ni translate : ' + n);
-    assert((await ap.evaluate(() => window.__examFakes.audio.started)) === 0, 'écoute jamais lancée');
-    const s = await session(ap);
-    assert(s.kind === 'call' && s.call.answers.length === 0 && s.call.turns.length === 0, 'rien d’enregistré');
-    await shot(ap, '40-appel-verrouille', { full: true });
-    await ap.click('[data-b="live"] [data-go="#/eleve"]');
-    await ap.waitForFunction(() => location.hash === '#/eleve');
-  });
-
-  await test('console jury · réponse attendue (IA) : micro du jury après l’ouverture, jamais l’élève', async () => {
+  await test('console jury · réponse attendue (IA) : micro du jury, jamais l’élève', async () => {
     await open(ap, '#/oral/new');
     await ap.waitForSelector('[data-subject]');
     await ap.locator('[data-subject]').first().click();
@@ -695,17 +755,9 @@ let callId = '';
     await ap.click('[data-act="listen-start"]');
     await ap.waitForSelector('[data-act="listen-stop"]');
     assert((await ap.evaluate(() => window.__examFakes.audio.preset)) === 'pc-interne', 'source « Son de l’appel sur ce PC »');
-    await emit(ap, 'final', { who: 'me', text: 'What is the main idea of the article?' });
-    await ap.waitForSelector('[data-b="janswer"] .ex-janswer-lock', { timeout: 5000 });
-    assert(/à partir du jeudi 12 novembre à 14 h/.test(await ap.textContent('[data-b="janswer"]')), 'raison du verrou côté jury');
-    assert((await callsOf(ap, 'juryAnswer')).length === 0, 'aucun appel IA avant l’ouverture');
-    probeA.date = OPEN_DATE;
-    assert((await ap.evaluate(() => AideVisio.examLock.check({ force: true }))).open === true, 'ouvert selon le serveur');
-    await sleep(8100);
     await emit(ap, 'final', { who: 'me', text: 'Why did the author write this article?' });
     await ap.waitForSelector('[data-b="janswer"] .ex-janswer-model', { timeout: 5000 });
     let card = await ap.textContent('[data-b="janswer"]');
-    assert(!(await ap.$('[data-b="janswer"] .ex-janswer-lock')), 'raison retirée après l’ouverture');
     assert(/Réponse attendue \(IA\)/.test(card) && /Question entendue/.test(card) && /Why did the author write this article\?/.test(card), 'carte : ' + card.replace(/\s+/g, ' ').slice(0, 160));
     assert(/Attendu :/.test(card) && !/Attendu :\s*Attendu/.test(card) && /A good answer would/.test(card), 'attendu + réponse modèle');
     let calls = await callsOf(ap, 'juryAnswer');
@@ -736,8 +788,6 @@ let callId = '';
     await ap.waitForSelector('.sheet-layer:not(.out) [data-m="export"]');
     const [dl] = await Promise.all([ap.waitForEvent('download'), ap.click('.sheet-layer:not(.out) [data-m="export"]')]);
     const md = fs.readFileSync(await dl.path(), 'utf8');
-    probeA.date = LOCKED_DATE;
-    await ap.evaluate(() => AideVisio.examLock.check({ force: true }));
     assert(md.includes('## Réponses modèles (IA, jury)') && md.includes('**Why did the author write this article?**') && md.includes('  - Attendu : le but de l’auteur') && md.includes('  - Réponse modèle : A good answer would'), 'export jury : ' + md.slice(-400));
   });
 
@@ -773,46 +823,15 @@ let callId = '';
 }
 
 {
-  const B = await makePage(DESK);
-  const bp = B.page;
-  const probeB = await serverDate(B.ctx, LOCKED_DATE);
-  await bp.clock.setSystemTime(new Date('2026-11-14T10:00:00+01:00'));
-
-  await test('appel · horloge du PC au 14/11 mais serveur au 11/11 : toujours verrouillé', async () => {
-    await newCall(bp);
-    await waitLocked(bp);
-    assert((await bp.evaluate(() => new Date().toISOString().slice(0, 10))) === '2026-11-14', 'horloge locale avancée');
-    assert(await bp.isDisabled('[data-act="listen-start"]'), 'écoute impossible');
-    let st = await bp.evaluate(() => AideVisio.examLock.check());
-    assert(st.open === false && st.source === 'server', 'décision du serveur : ' + JSON.stringify(st));
-    await emit(bp, 'final', { who: 'them', text: 'What do you think about the new tariffs?' });
-    await sleep(400);
-    assert((await callsOf(bp, 'liveAnswer')).length + (await callsOf(bp, 'translate')).length === 0, 'aucune aide');
-    probeB.fail = true;
-    const n0 = probeB.n;
-    st = await bp.evaluate(() => AideVisio.examLock.check({ force: true }));
-    assert(probeB.n > n0 && st.open === false && st.source === 'server', 'sonde échouée, verrou gardé : ' + JSON.stringify(st));
-    probeB.fail = false;
-    await bp.evaluate(() => { localStorage.setItem('aidevisio.exam.unlock', '1'); sessionStorage.setItem('unlock', '1'); });
-    await bp.goto(bp.url().replace('#', '&unlock=1&debug=1#'));
-    await bp.waitForSelector('.ex-call [data-b="live"]', { timeout: 15000 });
-    await waitLocked(bp);
-    assert(await bp.isDisabled('[data-act="listen-start"]'), 'toujours verrouillé');
-  });
-  await B.ctx.close();
-}
-
-{
   const C = await makePage(DESK);
   const cp = C.page;
-  await serverDate(C.ctx, OPEN_DATE);
   const Q1 = 'What do you think about the new tariffs?';
   let floatPop = null;
 
   await test('appel · ouvert : question du jury, réponse en flux, traduction, mots clés', async () => {
     callId = await newCall(cp);
     await waitOpen(cp);
-    assert(/Lancez l’écoute/.test(await cp.textContent('[data-b="live"]')), 'invitation à lancer l’écoute');
+    assert(/Lancer l’assistant/.test(await cp.textContent('[data-b="live"]')) && await cp.$('[data-b="live"] [data-act="assist"]'), 'bouton « Lancer l’assistant »');
     await cp.click('[data-src="pc-interne"]');
     await cp.click('[data-act="listen-start"]');
     await cp.waitForSelector('[data-act="listen-stop"]');
@@ -827,8 +846,8 @@ let callId = '';
     assert(/raise prices/.test(ans) && ans.length > partial.length, `réponse complète après le flux (« ${partial} » → « ${ans} »)`);
     assert((await liveText(cp, '.ex-live-en')) === Q1, 'question du jury affichée');
     assert((await liveText(cp, '[data-b="fr"]')) === 'FR: ' + Q1, 'traduction française');
-    const kw = await cp.$$eval('[data-b="live"] .ex-live-kw .pill', (p) => p.map((x) => x.textContent));
-    assert(JSON.stringify(kw) === '["tariffs","supply chain"]', 'mots clés : ' + kw);
+    const kw = await cp.$$eval('[data-b="live"] .ex-live-kw .pill', (p) => p.map((x) => [x.querySelector('b').textContent, (x.querySelector('.lv-kw-fr') || {}).textContent]));
+    assert(JSON.stringify(kw) === '[["tariffs","droits de douane"],["supply chain","chaîne d’approvisionnement"]]', 'mots clés + traduction : ' + JSON.stringify(kw));
     const la = await callsOf(cp, 'liveAnswer');
     assert(la.length === 1 && la[0].question === Q1 && la[0].shorter === false && la[0].subject, 'liveAnswer : ' + JSON.stringify(la));
     const tr = await callsOf(cp, 'translate');
@@ -936,19 +955,19 @@ let callId = '';
     await open(cp, '#/historique');
     await cp.waitForSelector(`[data-open="${callId}"]`);
     const row = await cp.textContent(`[data-open="${callId}"]`);
-    assert(/Appel d’entraînement/.test(row) && /2 questions/.test(row), 'ligne de l’historique : ' + row.replace(/\s+/g, ' ').slice(0, 160));
+    assert(/Sur Teams/.test(row) && /2 questions/.test(row), 'ligne de l’historique : ' + row.replace(/\s+/g, ' ').slice(0, 160));
     await shot(cp, '43-historique-appel');
     await cp.click(`[data-open="${callId}"]`);
     await cp.waitForFunction((id) => location.hash === '#/appel/' + id, callId);
     await open(cp, '#/');
     await cp.waitForSelector('.ex-home .ex-roles');
-    assert((await cp.locator('.ex-roles .ex-role').count()) === 3, 'trois cartes sur l’accueil');
-    assert(await cp.$(`.ex-resume [data-go="#/appel/${callId}"]`) && /Appel d’entraînement/.test(await cp.textContent('.ex-resume')), 'carte « Séance en cours » : appel non terminé');
+    assert((await cp.locator('.ex-roles .ex-role').count()) === 2, 'deux cartes sur l’accueil');
+    assert(await cp.$(`.ex-resume [data-go="#/appel/${callId}"]`) && /Entraînement sur Teams/.test(await cp.textContent('.ex-resume')), 'carte « Séance en cours » : appel non terminé');
     assert((await horizontalOverflow(cp)) <= 0, 'accueil sans débordement');
-    await shot(cp, '44-accueil-trois-cartes', { full: true });
+    await shot(cp, '44-accueil-deux-cartes', { full: true });
     await open(cp, '#/appel');
     await cp.waitForSelector('.ex-chooser .ex-call-intro');
-    assert((await cp.evaluate(() => location.hash)) === '#/appel', 'carte → choix du sujet de l’appel');
+    assert((await cp.evaluate(() => location.hash)) === '#/appel', 'carte → import du sujet de l’appel');
   });
   await C.ctx.close();
 }
@@ -956,20 +975,16 @@ let callId = '';
 {
   const D = await makePage(MOBILE);
   const dp = D.page;
-  const probeD = await serverDate(D.ctx, LOCKED_DATE);
 
-  await test('mobile : écran d’appel verrouillé puis ouvert, sans débordement', async () => {
+  await test('mobile : assistant en un geste, sans débordement', async () => {
     await newCall(dp);
-    await waitLocked(dp);
-    assert((await horizontalOverflow(dp)) <= 0, 'verrou sans débordement');
-    await shot(dp, '46-mobile-appel-verrouille', { both: false, full: true });
-    probeD.date = OPEN_DATE;
-    await dp.reload();
-    await dp.waitForSelector('.ex-call [data-b="live"]', { timeout: 15000 });
     await waitOpen(dp);
+    assert((await horizontalOverflow(dp)) <= 0, 'écran de départ sans débordement');
+    await shot(dp, '46-mobile-appel-depart', { both: false, full: true });
     assert(!(await dp.$('[data-src="pc-interne"]:visible')), 'pas de « Son du PC » sur téléphone');
-    await dp.click('[data-act="listen-start"]');
-    await dp.waitForSelector('[data-act="listen-stop"]');
+    await dp.click('[data-b="live"] [data-act="assist"]');
+    await dp.waitForSelector('[data-b="live"] .lv-status.on');
+    assert(D.ctx.pages().length === 1, 'pas de fenêtre flottante sur téléphone');
     await emit(dp, 'final', { who: 'mixed', text: 'What do you think about the new tariffs?' });
     await dp.waitForSelector('[data-b="live"] .ex-live-kw .pill', { timeout: 5000 });
     assert((await horizontalOverflow(dp)) <= 0, 'appel ouvert sans débordement');
@@ -978,6 +993,209 @@ let callId = '';
     await shot(dp, '47-mobile-appel', { both: false, full: true });
   });
   await D.ctx.close();
+}
+
+{
+  const E = await makePage({ width: 1536, height: 830 });
+  const ep = E.page;
+  const TEAMS = 'https://teams.microsoft.com/l/meetup-join/19%3ameeting_test%40thread.v2/0';
+  const Q = 'What do you think about the new tariffs?';
+
+  await test('Teams élève : accueil → lien → import du sujet → assistant (fenêtre flottante)', async () => {
+    await open(ep, '#/');
+    await ep.click('.ex-home .ex-role[data-go="#/appel"]');
+    await ep.waitForSelector('.lv-start-screen .lv-steps');
+    const txt = await ep.textContent('.lv-start-screen');
+    assert(/Importer le sujet/.test(txt) && /Rejoindre l’appel/.test(txt), 'étapes : ' + txt.replace(/\s+/g, ' ').slice(0, 160));
+    assert(!(await ep.$('[data-act="draw"], [data-act="gen"], [data-subject]')), 'ni tirage au sort, ni sujet généré, ni liste de sujets');
+    assert(await ep.$('.lv-start-screen [data-go="#/oral/new"]'), 'lien « Je suis le jury »');
+    await ep.evaluate(() => { window.__opened = []; window.open = ((o) => function (u, n, f) { if (u) { window.__opened.push(String(u)); return null; } return o.call(window, u, n, f); })(window.open); });
+    await ep.fill('[data-f="teams"]', 'Rejoindre : ' + TEAMS);
+    await ep.locator('[data-f="teams"]').blur();
+    await ep.waitForSelector('[data-b="teams"].is-set');
+    await ep.click('[data-b="teams"] [data-act="teams-join"]');
+    assert((await ep.evaluate(() => window.__opened)).includes(TEAMS), 'Rejoindre ouvre Teams');
+    await shot(ep, '50-teams-depart', { both: false, full: true });
+    await importSubject(ep);
+    const s = await session(ep);
+    assert(s.kind === 'call' && s.teamsLink === TEAMS, 'appel créé avec le lien Teams : ' + s.teamsLink);
+    assert(/tariffs hurt consumers/.test(s.subject.question) && /Trade wars/.test(s.subject.title), 'sujet importé : ' + s.subject.title + ' / ' + s.subject.question);
+    assert((await ep.inputValue('.ex-call [data-f="teams"]')) === TEAMS, 'lien repris sur l’écran d’appel');
+    await ep.waitForSelector('[data-b="live"] .lv-start [data-act="assist"]');
+    const tip = await ep.textContent('[data-b="live"] .lv-tip');
+    assert(/juste sous la caméra/.test(tip), 'conseil de placement : ' + tip);
+    const lay = await ep.evaluate(() => {
+      const r = (sel) => document.querySelector(sel).getBoundingClientRect();
+      const go = r('[data-b="live"] .lv-go'), live = r('[data-b="live"]'), side = r('.ex-call .lv-side');
+      const sideEl = document.querySelector('.ex-call .lv-side');
+      const titles = [...sideEl.querySelectorAll(':scope > .card')].map((c) => (c.querySelector('h2, summary b') || {}).textContent);
+      return { scroll: document.scrollingElement.scrollHeight - innerHeight, goIn: go.top >= 0 && go.bottom <= innerHeight, leftRight: live.right <= side.left, sideScroll: getComputedStyle(sideEl).overflowY, bottom: Math.max(live.bottom, side.bottom) <= innerHeight + 1, titles };
+    });
+    assert(lay.scroll <= 1 && lay.goIn && lay.leftRight && lay.bottom && lay.sideScroll === 'auto', '1536×830 : tout visible sans défiler, aides à gauche, colonne à droite : ' + JSON.stringify(lay));
+    assert(JSON.stringify(lay.titles) === '["Rejoindre l’appel","Son de l’appel","Sujet","Historique de l’appel"]', 'colonne de droite : ' + JSON.stringify(lay.titles));
+    for (const scheme of ['light', 'dark']) {
+      await ep.emulateMedia({ colorScheme: scheme });
+      await sleep(150);
+      await shot(ep, `51-teams-assistant-depart-${scheme}`, { both: false });
+    }
+    await ep.emulateMedia({ colorScheme: 'light' });
+    await ep.evaluate(() => { window.__examFakes.aiReady = false; });
+    await ep.click('[data-b="live"] [data-act="assist"]');
+    await ep.waitForSelector('[data-b="live"] .ex-live-err');
+    assert(/Pas de clé IA/.test(await ep.textContent('[data-b="live"] .ex-live-err')) && await ep.$('[data-b="live"] .ex-live-err [data-go="#/settings"]'), 'sans clé : cause + Réglages');
+    assert((await ep.evaluate(() => window.__examFakes.audio.started)) === 0, 'aucune écoute sans clé');
+    assert(E.ctx.pages().length === 1, 'aucune fenêtre ouverte sans clé');
+    await ep.evaluate(() => {
+      window.__examFakes.aiReady = true; Object.defineProperty(window, 'documentPictureInPicture', { value: undefined, configurable: true });
+      window.__warm = [];
+      const ai = AideVisio.ai, w0 = ai.warm;
+      ai.warm = (p, o) => { window.__warm.push(p); return w0 ? w0(p, o) : []; };
+    });
+    const [pop] = await Promise.all([E.ctx.waitForEvent('page'), ep.click('[data-b="live"] [data-act="assist"]')]);
+    await ep.waitForSelector('[data-b="live"] .lv-status.on');
+    assert(/J’écoute/.test(await ep.textContent('[data-b="live"] .lv-status')), 'état « J’écoute… »');
+    assert((await ep.evaluate(() => window.__examFakes.audio.started)) === 1, 'écoute lancée en un geste');
+    assert((await ep.evaluate(() => window.__warm)).includes('live'), 'connexion IA réchauffée au lancement');
+    await pop.waitForSelector('.lv-float .lv-stage .lv-status.on', { timeout: 5000 });
+    await emit(ep, 'final', { who: 'mixed', text: Q });
+    await pop.waitForSelector('.lv-float .ex-live-kw .pill', { timeout: 5000 });
+    assert(/raise prices/.test(await pop.textContent('.lv-float [data-b="ans"]')), 'réponse dans la fenêtre flottante');
+    assert((await pop.textContent('.lv-float .ex-live-en')).trim() === Q, 'question dans la fenêtre flottante');
+    const sizes = await pop.evaluate(() => {
+      const px = (sel) => parseFloat(getComputedStyle(document.querySelector(sel)).fontSize);
+      return { ans: px('[data-b="ans"]'), q: px('.ex-live-en'), fr: px('.lv-fr') };
+    });
+    assert(sizes.ans >= 1.6 * sizes.q && sizes.ans > sizes.fr, 'réponse nettement plus grande : ' + JSON.stringify(sizes));
+    assert(sizes.q >= 15 && sizes.fr >= 14, 'question et traduction lisibles à 60-70 cm : ' + JSON.stringify(sizes));
+    assert((await ep.evaluate(() => document.scrollingElement.scrollHeight - innerHeight)) <= 1, '1536×830 : réponse affichée sans défilement');
+    assert(await pop.evaluate(() => { const a = document.querySelector('.lv-a'); return a.scrollHeight <= a.clientHeight + 1; }), 'réponse entière visible dans la fenêtre');
+    assert(await pop.evaluate(() => [...document.styleSheets].some((x) => { try { return [...x.cssRules].some((r) => /lv-fit/.test(r.cssText)); } catch (e) { return false; } })), 'live.css copié dans la fenêtre flottante');
+    for (const scheme of ['light', 'dark']) {
+      await pop.setViewportSize({ width: 760, height: 420 });
+      await pop.evaluate((t) => { document.documentElement.dataset.theme = t; window.dispatchEvent(new Event('resize')); }, scheme);
+      await sleep(250);
+      await pop.screenshot({ path: path.join(SHOTS, `52-teams-flottante-${scheme}.png`) });
+      await ep.emulateMedia({ colorScheme: scheme });
+      await sleep(150);
+      await shot(ep, `53-teams-assistant-reponse-${scheme}`, { both: false });
+    }
+    await ep.emulateMedia({ colorScheme: 'light' });
+    assert(await ep.$('[data-b="live"] [data-act="float"].on') && await ep.$('[data-b="live"] [data-act="full"]'), 'boutons Fenêtre flottante (actif) et Plein écran');
+    assert((await horizontalOverflow(ep)) <= 0, 'pas de débordement');
+    await ep.click('[data-b="live"] [data-act="full"]');
+    await ep.waitForFunction(() => document.fullscreenElement && document.fullscreenElement.matches('[data-b="live"]'), null, { timeout: 5000 });
+    await ep.waitForSelector('[data-b="live"] [data-act="full"].on');
+    const fs = await ep.evaluate(() => ({ px: parseFloat(getComputedStyle(document.querySelector('[data-b="live"] [data-b="ans"]')).fontSize), fits: (() => { const a = document.querySelector('[data-b="live"] .lv-a'); return a.scrollHeight <= a.clientHeight + 1; })() }));
+    assert(fs.px >= 40 && fs.fits, 'plein écran : réponse en très gros et entière : ' + JSON.stringify(fs));
+    await sleep(200);
+    await ep.screenshot({ path: path.join(SHOTS, '55-teams-plein-ecran.png') });
+    await ep.click('[data-b="live"] [data-act="full"]');
+    await ep.waitForFunction(() => !document.fullscreenElement, null, { timeout: 5000 });
+    await ep.click('[data-b="live"] [data-act="listen-stop"]');
+    for (let i = 0; i < 50 && !pop.isClosed(); i++) await sleep(100);
+    assert(pop.isClosed(), 'fenêtre flottante fermée à l’arrêt');
+    await ep.waitForSelector('[data-b="live"] [data-act="assist"]');
+    assert(/raise prices/.test(await ep.textContent('[data-b="live"] [data-b="ans"]')), 'dernière réponse gardée après l’arrêt');
+    await ep.setViewportSize(MOBILE);
+    await ep.click('.ex-topbar [data-go="#/"]');
+    await ep.waitForSelector('.ex-home');
+    await open(ep, '#/appel');
+    await ep.waitForSelector('.lv-start-screen');
+    for (const scheme of ['light', 'dark']) {
+      await ep.emulateMedia({ colorScheme: scheme });
+      await sleep(150);
+      await shot(ep, `54-teams-depart-mobile-${scheme}`, { both: false, full: true });
+    }
+    assert((await horizontalOverflow(ep)) <= 0, 'départ mobile sans débordement');
+    await ep.click('.lv-start-screen [data-go="#/oral/new"]');
+    await ep.waitForFunction(() => location.hash === '#/oral/new');
+    await ep.waitForSelector('.ex-chooser [data-subject]');
+  });
+
+  await test('Teams élève : longue réponse ajustée, mots-clés traduits, coupures et erreurs expliquées', async () => {
+    await ep.setViewportSize({ width: 1536, height: 830 });
+    await ep.emulateMedia({ colorScheme: 'light' });
+    await newCall(ep);
+    await waitOpen(ep);
+    const err = (p) => p.evaluate(() => { const l = [...document.querySelectorAll('[data-b="live"] .ex-live-err, [data-b="float"] .ex-live-err')]; return l.length ? { text: l.map((e) => e.textContent.trim()).join(' | '), acts: l.flatMap((e) => [...e.querySelectorAll('[data-act], [data-go]')].map((b) => b.dataset.act || b.dataset.go)) } : null; });
+    // Micro refusé : cause précise, Réessayer et Changer de source.
+    await ep.click('[data-src="haut-parleur"]');
+    await ep.evaluate(() => { window.__examFakes.startError = { code: 'MIC_DENIED', msg: 'Accès au micro refusé. Cliquez sur le cadenas à gauche de l’adresse, autorisez le micro, puis réessayez.' }; Object.defineProperty(window, 'documentPictureInPicture', { value: undefined, configurable: true }); });
+    await ep.click('[data-b="live"] [data-act="assist"]');
+    await ep.waitForSelector('[data-b="live"] .ex-live-err');
+    let e = await err(ep);
+    assert(/micro refusé/.test(e.text) && e.acts.includes('assist') && e.acts.includes('pick-src'), 'micro refusé : ' + JSON.stringify(e));
+    for (let i = 0; i < 30 && E.ctx.pages().length > 1; i++) await sleep(100);
+    assert(E.ctx.pages().length === 1, 'fenêtre flottante refermée si le micro est refusé');
+    // Micro occupé : même chose, message différent.
+    await ep.evaluate(() => { window.__examFakes.startError = { code: 'MIC_BUSY', msg: 'Le micro est indisponible (utilisé par une autre application ?).' }; });
+    await ep.click('[data-b="live"] .ex-live-err [data-act="assist"]');
+    await ep.waitForFunction(() => /utilisé par une autre application/.test((document.querySelector('[data-b="live"] .ex-live-err') || {}).textContent || ''));
+    await ep.click('[data-b="live"] .ex-live-err [data-act="pick-src"]');
+    // Son du PC absent : proposer le micro.
+    await ep.click('[data-src="pc-interne"]');
+    await ep.evaluate(() => { window.__examFakes.startError = { code: 'PC_AUDIO_OFF', msg: '« Son du PC » n’est pas lancé.' }; });
+    await ep.click('[data-b="live"] [data-act="assist"]');
+    await ep.waitForFunction(() => /Son du PC/.test((document.querySelector('[data-b="live"] .ex-live-err') || {}).textContent || ''));
+    e = await err(ep);
+    assert(e.acts.includes('use-mic'), 'Son du PC absent → « Utiliser le micro » : ' + JSON.stringify(e));
+    await ep.evaluate(() => { window.__examFakes.startError = null; window.__examFakes.delay = 60; });
+    const [pop] = await Promise.all([E.ctx.waitForEvent('page'), ep.click('[data-b="live"] .ex-live-err [data-act="use-mic"]')]);
+    await ep.waitForSelector('[data-b="live"] .lv-status.on');
+    assert((await ep.evaluate(() => window.__examFakes.audio.preset)) === 'haut-parleur', 'bascule sur le micro');
+    await pop.setViewportSize({ width: 760, height: 420 });
+    await pop.waitForSelector('.lv-float .lv-status.on');
+    assert(/J’écoute/.test(await pop.textContent('.lv-float .lv-status')) && /sous la caméra/.test(await pop.textContent('.lv-float')), 'fenêtre : « J’écoute… » et conseil de placement');
+    // Longue réponse : ajustée sans coupure dans la page et dans la fenêtre.
+    await emit(ep, 'final', { who: 'mixed', text: 'What will happen in the long run for European and American consumers, in your opinion?' });
+    await pop.waitForSelector('.lv-float .ex-live-kw .pill', { timeout: 5000 });
+    await sleep(200);
+    const fit = async (p, sel) => p.evaluate((s) => { const a = document.querySelector(s + ' .lv-a'); const t = document.querySelector(s + ' [data-b="ans"]'); return { fits: a.scrollHeight <= a.clientHeight + 1, px: parseFloat(getComputedStyle(t).fontSize), kw: [...document.querySelectorAll(s + ' .lv-kw-fr')].map((x) => x.textContent) }; }, sel);
+    const fp = await fit(pop, '.lv-float'), pg = await fit(ep, '[data-b="live"]');
+    assert(fp.fits && fp.px >= 24, 'fenêtre 760×420 : longue réponse entière et lisible : ' + JSON.stringify(fp));
+    assert(pg.fits && pg.px >= 28, 'page : longue réponse entière : ' + JSON.stringify(pg));
+    assert(fp.kw.length === 2 && fp.kw[0] === 'droits de douane', 'traduction des mots-clés dans la fenêtre : ' + JSON.stringify(fp.kw));
+    const btns = await pop.evaluate(() => ['shorter', 'retry'].map((a) => { const b = document.querySelector(`.lv-float [data-act="${a}"]`); if (!b) return null; const r = b.getBoundingClientRect(); return r.width >= 60 && r.height >= 30 && r.bottom <= innerHeight && r.right <= innerWidth; }));
+    assert(btns.every(Boolean), 'Plus court / Réessayer visibles et cliquables dans la fenêtre : ' + JSON.stringify(btns));
+    await pop.screenshot({ path: path.join(SHOTS, '56-teams-flottante-longue.png') });
+    await shot(ep, '57-teams-reponse-longue', { both: false });
+    // Perte de son passagère : avertissement, puis retour.
+    await emit(ep, 'info', { who: 'them', code: 'MIC_MUTED', kind: 'warn', message: 'Le micro semble coupé (touche de sourdine ou réglage de Windows).' });
+    await pop.waitForSelector('.lv-float .lv-warn');
+    assert(/micro semble coupé/.test(await ep.textContent('[data-b="live"] .lv-warn')), 'avertissement dans la page');
+    await pop.screenshot({ path: path.join(SHOTS, '58-teams-flottante-alerte.png') });
+    await emit(ep, 'info', { who: 'them', code: 'MIC_BACK', kind: 'info', message: 'Micro reconnecté.' });
+    await ep.waitForFunction(() => !document.querySelector('[data-b="live"] .lv-warn'));
+    // Clé refusée : cause + Réglages, dans la page et la fenêtre.
+    await ep.evaluate(() => { window.__examFakes.liveError = { code: 'KEY', msg: 'Clé Gemini refusée : recopiez-la en entier dans Réglages.' }; });
+    await pop.click('.lv-float [data-act="retry"]');
+    await pop.waitForSelector('.lv-float .ex-live-err [data-act="settings"]', { timeout: 5000 });
+    e = await err(ep);
+    assert(/Clé Gemini refusée/.test(e.text) && e.acts.includes('#/settings'), 'clé refusée : ' + JSON.stringify(e));
+    await ep.evaluate(() => { window.__examFakes.liveError = null; });
+    // Son coupé pour de bon : l’assistant s’arrête, libère tout et propose de relancer.
+    await emit(ep, 'ended', { who: 'mixed', reason: 'track-ended', kind: 'audio' });
+    await ep.waitForSelector('[data-b="live"] .ex-live-err [data-act="assist"]', { timeout: 5000 });
+    e = await err(ep);
+    assert(/micro s’est coupé/.test(e.text), 'son coupé expliqué : ' + JSON.stringify(e));
+    assert(await ep.evaluate(() => !window.__examFakes.audio.running && !AideVisio.audio.running), 'flux libérés');
+    for (let i = 0; i < 30 && !pop.isClosed(); i++) await sleep(100);
+    assert(pop.isClosed(), 'fenêtre flottante fermée quand le son est perdu');
+    // Plein écran : Échap pour sortir.
+    await ep.evaluate(() => { window.__examFakes.delay = 120; });
+    const [pop2] = await Promise.all([E.ctx.waitForEvent('page'), ep.click('[data-b="live"] .ex-live-err [data-act="assist"]')]);
+    await ep.waitForSelector('[data-b="live"] [data-act="full"]');
+    await ep.click('[data-b="live"] [data-act="full"]');
+    await ep.waitForFunction(() => document.fullscreenElement, null, { timeout: 5000 });
+    await ep.waitForFunction(() => /Échap/.test(document.querySelector('[data-b="live"] .lv-head').textContent), null, { timeout: 3000 }).catch(() => {});
+    assert(/Échap/.test(await ep.textContent('[data-b="live"] .lv-head')), 'rappel « Échap » en plein écran');
+    await ep.keyboard.press('Escape');
+    await ep.waitForFunction(() => !document.fullscreenElement, null, { timeout: 5000 });
+    await ep.click('[data-b="live"] [data-act="listen-stop"]');
+    for (let i = 0; i < 30 && !pop2.isClosed(); i++) await sleep(100);
+    assert(pop2.isClosed() && !(await ep.evaluate(() => AideVisio.audio.running)), 'arrêt : fenêtre fermée, écoute libérée');
+  });
+  await E.ctx.close();
 }
 
 await browser.close();

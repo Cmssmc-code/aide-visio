@@ -447,7 +447,7 @@
     </div></div>`;
   }
 
-  const EXAM_ROUTES = ['', 'oral', 'eleve', 'sujet', 'historique'];
+  const EXAM_ROUTES = ['', 'oral', 'eleve', 'appel', 'sujet'];
   function tabFor(name) {
     if (EXAM_ROUTES.includes(name)) return 'home';
     if (name === 'diag') return 'settings';
@@ -504,6 +504,7 @@
       });
       S.bus.on('settings:changed', () => { applyTheme(); });
       S.bus.on('ai:keyerror', (x) => {
+        if (/^#\/(settings|diag)/.test(location.hash)) return;
         const name = x && x.provider === 'claude' ? 'Claude' : 'Gemini';
         toast(`Clé ${name} refusée : vérifiez-la dans les Réglages.`, 'err', { action: { label: 'Réglages', onClick: () => S.app.go('#/settings') }, duration: 9000 });
       });
