@@ -141,9 +141,9 @@
   }
 
   const PURPOSES = [
-    ['answer', 'Jury IA et aide en direct', 'Rapide pendant l’oral'],
-    ['fast', 'Tâches rapides', 'Tri des questions, nettoyage des textes'],
-    ['prep', 'Sujets et évaluation', 'Qualité avant vitesse']
+    ['answer', 'Jury IA', 'Rapide pendant l’oral'],
+    ['fast', 'Petites tâches', 'Tri et nettoyage des textes'],
+    ['prep', 'Sujets et notes', 'Qualité avant vitesse']
   ];
 
   function keyRow(p) {
@@ -175,35 +175,39 @@
     const scale = Number(s.fontScale) || 1;
 
     body.innerHTML = `
-      ${section('Clés d’intelligence artificielle', `
-        ${keyRow({ id: 'openai', name: 'OpenAI (GPT-5.4 mini)', icon: 'bolt', color: 'blue', badge: '<span class="pill pill-ok">Prioritaire · la plus rapide</span>', url: 'https://platform.openai.com/api-keys', linkLabel: 'Obtenir une clé', placeholder: 'sk-' + 'proj-…', hint: 'Jury IA, sujets et évaluation : la plus rapide.' })}
-        ${keyRow({ id: 'gemini', name: 'Google Gemini', icon: 'sparkles', color: 'blue', badge: '<span class="pill pill-ok">Gratuite · recommandée</span>', url: 'https://aistudio.google.com/apikey', linkLabel: 'Obtenir une clé gratuite', placeholder: 'AIza…', hint: 'Transcription de l’appel, jury IA, sujets et évaluation.' })}
-        ${keyRow({ id: 'claude', name: 'Anthropic Claude', icon: 'shield', color: 'orange', badge: '<span class="pill">Secours · payante</span>', url: 'https://console.anthropic.com/settings/keys', linkLabel: 'Obtenir une clé', placeholder: 'sk-' + 'ant-…', hint: 'Facultative : prend le relais si Gemini est saturé.' })}
-        ${keyRow({ id: 'groq', name: 'Groq (Whisper + GPT-OSS)', icon: 'bolt', color: 'violet', badge: '<span class="pill pill-ok">Gratuite · ultra-rapide</span>', url: 'https://console.groq.com/keys', linkLabel: 'Obtenir une clé gratuite', placeholder: 'gsk_…', hint: 'Transcription Whisper en ~0,3 s, IA de secours.' })}
-        <div class="list-row">${tile('person', 'gray')}${main('Se souvenir des clés sur cet appareil', 'Décochez sur un PC emprunté : les clés seront oubliées à la fermeture de l’onglet.')}
-          ${sw('rememberKeys', s.rememberKeys !== false, 'Se souvenir des clés sur cet appareil')}</div>`)}
+      ${section('Clé IA', `
+        ${keyRow({ id: 'gemini', name: 'Google Gemini', icon: 'sparkles', color: 'blue', badge: '<span class="pill pill-ok">Gratuite · conseillée</span>', url: 'https://aistudio.google.com/apikey', linkLabel: 'Obtenir une clé gratuite', placeholder: 'AIza…', hint: 'Une seule clé suffit pour tout utiliser.' })}
+        ${keyRow({ id: 'openai', name: 'OpenAI', icon: 'bolt', color: 'blue', badge: '<span class="pill">Payante · plus rapide</span>', url: 'https://platform.openai.com/api-keys', linkLabel: 'Obtenir une clé', placeholder: 'sk-' + 'proj-…', hint: 'Facultative : réponses plus rapides.' })}
+        <div class="list-row">${tile('person', 'gray')}${main('Garder les clés sur cet appareil', 'À décocher sur un ordinateur prêté.')}
+          ${sw('rememberKeys', s.rememberKeys !== false, 'Garder les clés sur cet appareil')}</div>`)}
 
-      ${section('Intelligence artificielle', `
-        <div class="list-row st-wrap">${tile('bolt', 'violet')}${main('Fournisseur', 'Automatique : OpenAI d’abord, puis Gemini, Claude et Groq en secours.')}
+      ${section('Affichage', `
+        <div class="list-row st-wrap">${tile('eye', 'blue')}${main('Thème', null)}${seg('theme', s.theme || 'auto', [['auto', 'Auto'], ['light', 'Clair'], ['dark', 'Sombre']])}</div>
+        <div class="list-row st-range st-wrap">${tile('edit', 'blue')}${main('Taille du texte pendant l’appel', null)}
+          <span class="st-range-ctl"><input type="range" min="0.8" max="1.6" step="0.05" value="${scale}" data-set="fontScale" aria-label="Taille du texte"><output data-out="fontScale">${Math.round(scale * 100)} %</output></span></div>
+        <div class="list-row"><div class="st-preview" style="--st-scale:${scale}"><b>In my view, the article raises a key question for European firms.</b></div></div>`)}
+
+      ${section('Appareil', `
+        <button type="button" class="list-row" data-act="diag">${tile('shield', 'green')}${main('Tester le micro et la connexion', 'À faire avant un entraînement.')}${chev()}</button>
+        <div class="list-row">${tile('doc', 'gray')}${main('Espace utilisé', 'Calcul…', 'data-usage')}
+          <button type="button" class="btn btn-sm btn-ghost" data-act="persist" hidden>${icon('shield')} Protéger</button></div>
+        <button type="button" class="list-row st-danger" data-act="wipe">${tile('trash', 'red')}${main('Tout effacer sur cet appareil', 'Séances, sujets, réglages et clés.')}</button>`)}
+
+      <details class="ex-more st-adv"><summary>Réglages avancés</summary>
+      ${section('Autres clés (facultatives)', `
+        ${keyRow({ id: 'claude', name: 'Anthropic Claude', icon: 'shield', color: 'orange', badge: '<span class="pill">Payante</span>', url: 'https://console.anthropic.com/settings/keys', linkLabel: 'Obtenir une clé', placeholder: 'sk-' + 'ant-…', hint: 'Prend le relais si les autres ne répondent pas.' })}
+        ${keyRow({ id: 'groq', name: 'Groq', icon: 'bolt', color: 'violet', badge: '<span class="pill pill-ok">Gratuite</span>', url: 'https://console.groq.com/keys', linkLabel: 'Obtenir une clé gratuite', placeholder: 'gsk_…', hint: 'Transcription très rapide de la voix.' })}`)}
+
+      ${section('Choix de l’IA', `
+        <div class="list-row st-wrap">${tile('bolt', 'violet')}${main('Service utilisé', 'Auto : le plus rapide disponible.')}
           ${seg('provider', s.provider || 'auto', [['auto', 'Auto'], ['openai', 'OpenAI'], ['gemini', 'Gemini'], ['claude', 'Claude'], ['groq', 'Groq']])}</div>
         ${PURPOSES.map(([p, label, sub]) => `<div class="list-row st-model st-wrap">${tile(p === 'answer' ? 'sparkles' : p === 'fast' ? 'waveform' : 'doc', p === 'answer' ? 'blue' : p === 'fast' ? 'teal' : 'green')}${main(label, sub, `data-auto="${p}"`)}
           <select data-model="${p}" aria-label="Modèle : ${esc(label)}"><option value="auto">Automatique</option>${models[p] && models[p] !== 'auto' ? `<option value="${esc(models[p])}" selected>${esc(models[p])}</option>` : ''}</select></div>`).join('')}
         <div class="list-row">${tile('refresh', 'gray')}<span class="list-main"><small data-models-status>Liste des modèles : automatique.</small></span>
           <button type="button" class="btn btn-sm btn-ghost" data-act="discover">${icon('refresh')} Actualiser</button></div>`)}
+      </details>
 
-      ${section('Affichage', `
-        <div class="list-row st-wrap">${tile('eye', 'blue')}${main('Thème', 'Automatique : suit le réglage de l’appareil.')}${seg('theme', s.theme || 'auto', [['auto', 'Auto'], ['light', 'Clair'], ['dark', 'Sombre']])}</div>
-        <div class="list-row st-range st-wrap">${tile('edit', 'blue')}${main('Taille du texte de l’aide en direct', 'Suggestions affichées pendant l’appel avec le jury.')}
-          <span class="st-range-ctl"><input type="range" min="0.8" max="1.6" step="0.05" value="${scale}" data-set="fontScale" aria-label="Taille du texte"><output data-out="fontScale">${Math.round(scale * 100)} %</output></span></div>
-        <div class="list-row"><div class="st-preview" style="--st-scale:${scale}"><b>In my view, the article raises a key question for European firms.</b> <span class="muted">— aperçu de l’aide en direct</span></div></div>`)}
-
-      ${section('Données et appareil', `
-        <div class="list-row">${tile('doc', 'gray')}${main('Stockage local', 'Calcul…', 'data-usage')}
-          <button type="button" class="btn btn-sm btn-ghost" data-act="persist" hidden>${icon('shield')} Protéger</button></div>
-        <button type="button" class="list-row" data-act="diag">${tile('shield', 'green')}${main('Diagnostic', 'Micro, son de l’appel Teams, clé IA, connexion : à faire avant chaque oral.')}${chev()}</button>
-        <button type="button" class="list-row st-danger" data-act="wipe">${tile('trash', 'red')}${main('Effacer toutes mes données de cet appareil', 'Oraux blancs, sujets importés, réglages et clés.')}</button>`)}
-
-      <p class="small muted st-about">${icon('shield')} Aide Visio fonctionne entièrement dans votre navigateur. Vos oraux et vos clés restent sur cet appareil ; l’IA est appelée directement chez OpenAI, Google, Anthropic ou Groq, sans serveur intermédiaire.</p>`;
+      <p class="small muted st-about">${icon('shield')} Vos séances et vos clés restent sur cet appareil. Aucun serveur intermédiaire.</p>`;
 
     let discovered = { gemini: [], claude: [] };
 
@@ -279,7 +283,7 @@
         } else if (mine.length) {
           out.innerHTML = `<span class="pill pill-err">${icon('xmark')} Échec</span> ${esc(errText(mine[0].error))}`;
         } else {
-          out.innerHTML = `<span class="pill pill-warn">${icon('info')} Non testée</span> Vérifiez le réglage « Fournisseur ».`;
+          out.innerHTML = `<span class="pill pill-warn">${icon('info')} Non testée</span> Vérifiez « Service utilisé » dans les réglages avancés.`;
         }
       } catch (e) {
         out.innerHTML = `<span class="pill pill-err">${icon('xmark')} Échec</span> ${esc(errText(e))}`;
@@ -562,7 +566,7 @@
           });
         } else {
           const e = err || (mine[0] && mine[0].error);
-          const t = mine.length || err ? errText(e) : 'non testée (réglage « Fournisseur »)';
+          const t = mine.length || err ? errText(e) : 'non testée (réglage « Service utilisé »)';
           let advice = 'Réessayez dans un instant.';
           if (/clé refusée/.test(t)) advice = 'Clé refusée : recopiez-la depuis la page de la clé, sans espace, puis enregistrez.';
           else if (/quota/.test(t)) advice = p === 'gemini' ? 'Quota gratuit atteint : patientez une minute ou ajoutez une clé Claude de secours.' : p === 'openai' ? 'Crédit ou quota insuffisant sur le compte OpenAI.' : 'Crédit ou quota insuffisant sur le compte Anthropic.';

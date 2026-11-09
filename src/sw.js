@@ -3,7 +3,7 @@
 const VERSION = /*@version*/'dev'/*@end*/;
 const SHELL = /*@shell*/[
   './index.html', './aidevisio.html', './manifest.webmanifest',
-  './styles.css', './screens.css', './exam.css',
+  './styles.css', './screens.css', './exam.css', './design.css',
   './js/util.js', './js/store.js', './js/docs.js', './js/ai.js', './js/audio.js', './js/app.js', './js/screens.js',
   './js/exam-fiches.js', './js/exam-subjects.js', './js/exam-subjects-2.js', './js/exam-ai.js', './js/exam.js',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png',

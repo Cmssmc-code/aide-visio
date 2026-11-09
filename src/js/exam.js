@@ -651,7 +651,7 @@
     return `<button type="button" class="card ex-scard${o.hide ? ' is-hidden-q' : ''}" data-subject="${esc(s.id)}" style="--hue:${THEME_HUE[s.theme] || 214}">
       <div class="ex-scard-top">${themeChip(s.theme)}${custom ? `<span class="pill pill-xs pill-accent">${/^ai-/.test(s.id) ? 'IA' : 'Importé'}</span>` : ''}${did ? `<span class="pill pill-xs pill-ok" title="${did.kind === 'jury' ? 'Oral blanc avec jury' : 'Entraînement solo'}">${icon('check')}Fait le ${esc(when)}</span>` : ''}</div>
       ${o.hide
-        ? `<b class="ex-scard-title">Sujet ${esc(o.n || '')} · ${esc((themeOf(s.theme) || {}).fr || 'thème libre')}</b><span class="ex-scard-q muted">Titre et question cachés jusqu’au tirage, comme le jour J.</span>`
+        ? `<b class="ex-scard-title">Sujet ${esc(o.n || '')} · ${esc((themeOf(s.theme) || {}).fr || 'thème libre')}</b><span class="ex-scard-q muted">Titre et question cachés jusqu’au tirage.</span>`
         : `<b class="ex-scard-title" lang="en">${esc(s.title)}</b><span class="ex-scard-q" lang="en">${esc(s.question)}</span>`}
       <span class="ex-scard-meta">${icon('doc')}${subjectWords(s)} mots · ${s.paragraphs.length} §${s.date ? ' · ' + esc(s.date) : ''}</span>
     </button>`;
@@ -864,87 +864,55 @@
   }
 
   function renderHome(root) {
-    const cd = countdown();
-    const info = examInfo();
     const list = store.list();
     const sc = scored();
     const last = sc[sc.length - 1];
     const prev = sc[sc.length - 2];
     const delta = last && prev ? round1(last.evaluation.total - prev.evaluation.total) : null;
     const open = list.find((s) => (s.kind === 'call' ? s.call && s.call.startedAt && !s.call.endedAt : s.phase !== 'done' && !s.evaluation && (s.prep.startedAt || s.expose.startedAt)) && Date.now() - Date.parse(stamp(s)) < 4 * 86400e3);
-    const nSubjects = store.subjects().length;
+    const n = list.length;
+    const histSub = last
+      ? `Dernière note ${fmtNum(last.evaluation.total)}/20${delta != null ? ` · <span class="${delta >= 0 ? 'ex-up' : 'ex-down'}">${delta >= 0 ? '+' : ''}${fmtNum(delta)}</span>` : ''}`
+      : n ? `${n} séance${n > 1 ? 's' : ''} enregistrée${n > 1 ? 's' : ''}` : 'Vos séances et vos notes apparaîtront ici';
     root.innerHTML = `<div class="screen ex ex-home">
       <header class="home-head">
         <div class="brand">
           <div class="app-icon" aria-hidden="true">${icon('graduation')}</div>
-          <div class="brand-text"><h1 class="h1">Oral blanc · UE 218</h1><p class="home-sub">Anglais des affaires · DSGC Cnam Intec</p></div>
+          <div class="brand-text"><h1 class="h1">Aide Visio</h1><p class="home-sub">Entraînement à l’oral d’anglais des affaires</p></div>
         </div>
         <div class="home-tools">
           <button type="button" class="icon-btn hide-mobile" data-go="#/fiches" title="Fiches" aria-label="Fiches">${icon('list')}</button>
-          <button type="button" class="icon-btn hide-mobile" data-go="#/historique" title="Historique" aria-label="Historique">${icon('clock')}</button>
           <button type="button" class="icon-btn hide-mobile" data-go="#/settings" title="Réglages" aria-label="Réglages">${icon('gear')}</button>
         </div>
       </header>
 
-      <section class="card ex-count" data-state="${cd.state}">
-        <div class="ex-count-main">
-          <span class="eyebrow">${icon('calendar')}${esc(info.title)}</span>
-          <b class="ex-count-big" data-b="cd-big" aria-live="polite">${esc(cd.big)}</b>
-          <span class="ex-count-text" data-b="cd-text">${esc(cd.text)}</span>
-        </div>
-        <div class="ex-count-side">
-          <div class="ex-format">${info.format.map((f) => `<span><b>${esc(f.minutes)}${NB}min</b>${esc(f.label)}</span>`).join('<i aria-hidden="true"></i>')}</div>
-          <p class="small muted">${icon('video', 'ico-inline')} ${esc(info.mode)} · lien reçu par mail · pièce d’identité + convocation imprimée</p>
-          ${aiReady() ? '' : `<p class="small ex-ai-off">${icon('info', 'ico-inline')} Sans clé IA : sujets, chronos, grille et fiches marchent ; l’évaluation et le jury IA corrigé demandent une clé. <button type="button" class="btn btn-quiet btn-sm" data-go="#/settings">Ajouter une clé</button></p>`}
-        </div>
-      </section>
-
       ${open ? `<section class="card ex-resume">
         <span class="tile tile-orange">${icon('clock')}</span>
-        <div class="grow"><b>Séance en cours</b><small class="muted">${open.kind === 'solo' ? 'Entraînement' : esc(kindLabel(open))} · ${esc(open.subject.title)} · ${esc(phaseLabel(open))}</small></div>
+        <div class="grow"><b>Séance en cours</b><small class="muted">${open.kind === 'solo' ? 'Entraînement avec l’IA' : esc(kindLabel(open))} · ${esc(open.subject.title)} · ${esc(phaseLabel(open))}</small></div>
         <button type="button" class="btn btn-primary btn-sm" data-go="${esc(sessionHash(open))}">${icon('play')}<span>Reprendre</span></button>
       </section>` : ''}
 
-      <div class="ex-roles">
+      <nav class="ex-roles" aria-label="Choisir un entraînement">
+        <button type="button" class="card ex-role ex-role-solo is-primary" data-go="#/eleve">
+          <span class="ex-role-ic">${icon('sparkles')}</span>
+          <span class="ex-role-text"><b>Entraînement avec l’IA</b><span>Un jury IA vous interroge à l’oral en anglais et corrige chaque réponse.</span></span>
+          ${icon('chevron-right', 'chev')}
+        </button>
         <button type="button" class="card ex-role ex-role-jury" data-go="#/oral/new">
           <span class="ex-role-ic">${icon('person2')}</span>
-          <span class="ex-role-text"><b>Je fais passer l’oral</b><span>Jury · sujet à partager dans Teams ou Meet, chronos, grille, questions à poser, note /20</span></span>
+          <span class="ex-role-text"><b>Entraînement sur Teams</b><span>Avec un jury humain : sujet partagé, chronos, grille et note sur 20.</span></span>
           ${icon('chevron-right', 'chev')}
         </button>
-        <button type="button" class="card ex-role ex-role-solo" data-go="#/eleve">
-          <span class="ex-role-ic">${icon('graduation')}</span>
-          <span class="ex-role-text"><b>Je m’entraîne</b><span>Élève · préparation chronométrée, exposé au micro, jury IA, correction après coup</span></span>
+        <button type="button" class="card ex-role ex-role-hist" data-go="#/historique">
+          <span class="ex-role-ic">${icon('clock')}</span>
+          <span class="ex-role-text"><b>Historique</b><span>${histSub}</span></span>
           ${icon('chevron-right', 'chev')}
         </button>
-        <button type="button" class="card ex-role ex-role-call" data-go="#/appel">
-          <span class="ex-role-ic">${icon('video')}</span>
-          <span class="ex-role-text"><b>Appel d’entraînement</b><span>Teams ou Meet · réponses IA en direct</span></span>
-          ${icon('chevron-right', 'chev')}
-        </button>
-      </div>
-
-      <div class="section-head"><h2 class="h2">Accès rapides</h2></div>
-      <div class="ex-quick">
-        <button type="button" class="card ex-qcard" data-go="#/fiches/methode"><span class="tile tile-blue">${icon('list')}</span><b>Fiches</b><small>Méthode, phrases, thèmes, erreurs</small></button>
-        <button type="button" class="card ex-qcard" data-go="#/fiches/jourj"><span class="tile tile-green">${icon('check')}</span><b>Checklist jour J</b><small>La veille, le matin, pendant</small></button>
-        <button type="button" class="card ex-qcard" data-go="#/historique"><span class="tile tile-violet">${icon('star')}</span><b>Historique</b>
-          <small>${last ? `Dernière note ${fmtNum(last.evaluation.total)}/20${delta != null ? ` · <span class="${delta >= 0 ? 'ex-up' : 'ex-down'}">${delta >= 0 ? '+' : ''}${fmtNum(delta)}</span>` : ''}` : `${list.length} séance${list.length > 1 ? 's' : ''}`}</small></button>
-        <button type="button" class="card ex-qcard" data-go="#/fiches/actu"><span class="tile tile-orange">${icon('globe')}</span><b>Actualité</b><small>Faits 2025-2026 à citer</small></button>
-      </div>
-
-      <footer class="home-foot">
-        <span>${icon('doc')}${nSubjects} sujets d’entraînement</span>
-        <span>${aiReady() ? `${icon('sparkles')}IA prête` : `${icon('info')}Sans clé IA : sujets, chronos, grille et fiches marchent hors ligne`}</span>
-      </footer>
+      </nav>
+      ${aiReady() ? '' : `<p class="ex-home-note">${icon('info', 'ico-inline')}<span>Sans clé IA, le jury IA pose les questions mais ne corrige pas.</span><button type="button" class="btn btn-quiet btn-sm" data-go="#/settings">Ajouter une clé</button></p>`}
     </div>`;
     markTab('home');
-    const off = onTick(() => {
-      const c = countdown();
-      const b = $('[data-b="cd-big"]', root), t = $('[data-b="cd-text"]', root);
-      if (b && b.textContent !== c.big) b.textContent = c.big;
-      if (t && t.textContent !== c.text) t.textContent = c.text;
-    });
-    setCurrent({ leave: off });
+    setCurrent({});
   }
   function phaseLabel(s) {
     if (s.kind === 'call') return s.call && s.call.endedAt ? 'terminé' : s.call && s.call.startedAt ? 'en cours' : 'pas commencé';
@@ -964,48 +932,29 @@
     const aiOk = aiReady();
     const needKey = aiOk ? '' : '<span class="pill pill-xs pill-warn ex-needkey">Clé IA requise</span>';
     root.innerHTML = `<div class="screen ex ex-chooser">
-      ${topbar({ title: solo ? 'Je m’entraîne' : call ? 'Appel d’entraînement' : 'Choisir le sujet', sub: solo ? 'Entraînement solo' : call ? 'Teams ou Meet · sujet de l’appel' : 'Jury · oral blanc', back: '#/' })}
-      ${call ? `<section class="card card-pad ex-jury-ai ex-call-intro">
+      ${topbar({ title: solo ? 'Entraînement avec l’IA' : call ? 'Appel d’entraînement' : 'Entraînement sur Teams', sub: solo ? '' : call ? 'Teams ou Meet' : 'Jury humain · choisir le sujet', back: '#/' })}
+      ${call ? `<p class="ex-call-intro muted">Choisissez le sujet : il reste affiché pendant l’appel, avec les réponses de l’IA.</p>` : ''}
+      ${solo ? `<section class="card card-pad ex-jury-ai">
         <div class="ex-jury-ai-main">
-          <span class="ex-role-ic">${icon('video')}</span>
-          <div><h1 class="h2">Choisissez le sujet de l’appel</h1>
-          <p class="muted small">Il reste affiché pendant l’appel Teams ou Meet. Aide Visio écoute la question du jury et affiche une réponse en anglais, sa traduction et les mots clés.</p></div>
-        </div>
-      </section>` : ''}
-      ${solo ? `<section class="card card-pad ex-jury-ai" style="--hue:150">
-        <div class="ex-jury-ai-main">
-          <span class="ex-role-ic">${icon('person2')}</span>
-          <div><h1 class="h2">S’entraîner avec le jury IA</h1>
-          <p class="muted small">Sujet tiré au sort, exposé facultatif. Le jury pose ses questions à voix haute en anglais, écoute votre réponse au micro, puis corrige : note, fautes, réponse modèle. Bilan à la fin.${aiOk ? '' : ' Sans clé IA : questions du corrigé, sans correction automatique.'}</p></div>
+          <span class="ex-role-ic">${icon('sparkles')}</span>
+          <div><h1 class="h2">Jury IA</h1>
+          <p class="muted">Un sujet au hasard, 5 à 8 questions à l’oral en anglais, une correction après chaque réponse.${aiOk ? '' : ' Sans clé IA : questions seulement, sans correction.'}</p></div>
         </div>
         <div class="ex-actions-row">
-          <button type="button" class="btn btn-primary btn-lg" data-act="quick-jury">${icon('play')}<span>Commencer avec le jury IA</span></button>
+          <button type="button" class="btn btn-primary btn-lg" data-act="quick-jury">${icon('play')}<span>Commencer</span></button>
         </div>
       </section>
-      <section class="card card-pad ex-teams-join">
-        ${teamsFieldHTML(prefs().studentTeams || '', { id: 'ex-teams-student', label: 'Rejoindre l’oral blanc (Teams ou Meet)', joinLabel: 'Ouvrir', hint: 'Collez le lien envoyé par Corentin, puis « Ouvrir ». Caméra allumée, feuilles blanches, aucun document.' })}
-        <div class="ex-call-cta">
-          <button type="button" class="btn" data-go="#/appel">${icon('sparkles')}<span>Aide IA pendant l’appel</span></button>
-          <small class="muted">Réponses IA en direct pendant un appel d’entraînement.</small>
-        </div>
-      </section>
-      <section class="card card-pad ex-solo-intro">
-        <h1 class="h2">Un oral blanc complet, seule</h1>
-        <ol class="ex-solo-steps">
-          <li><span class="step-n">1</span><span><b>Préparation chronométrée</b><small>Sujet tiré au sort, 1 h, brouillon en mots-clés</small></span></li>
-          <li><span class="step-n">2</span><span><b>Exposé au micro</b><small>15 min, transcription montrée seulement après</small></span></li>
-          <li><span class="step-n">3</span><span><b>Jury IA</b><small>5 à 8 questions lues en anglais, correction après chaque réponse</small></span></li>
-          <li><span class="step-n">4</span><span><b>Bilan /20</b><small>Critères de l’épreuve, fautes, plan modèle</small></span></li>
-        </ol>
-      </section>` : ''}
-      <div class="ex-actions-row">
-        <button type="button" class="btn btn-primary btn-lg" data-act="draw">${icon('sparkles')}<span>Tirer au sort comme le jour J</span></button>
-        <button type="button" class="btn btn-lg" data-act="import">${icon('import')}<span>Importer un sujet</span></button>
-        <button type="button" class="btn btn-lg${aiOk ? '' : ' is-needkey'}" data-act="gen"${aiOk ? '' : ' aria-disabled="true" title="Demande une clé IA (Réglages)"'}>${icon('globe')}<span>Générer un sujet d’actualité (IA)</span>${needKey}</button>
+      <div class="section-head"><h2 class="h2">Ou un oral complet avec préparation</h2></div>` : ''}
+      <div class="ex-actions-row ex-pick-row">
+        <button type="button" class="btn${solo ? '' : ' btn-primary'} btn-lg" data-act="draw">${icon('sparkles')}<span>Tirer un sujet au hasard</span></button>
+        <button type="button" class="btn btn-quiet" data-act="import">${icon('import')}<span>Importer</span></button>
+        <button type="button" class="btn btn-quiet${aiOk ? '' : ' is-needkey'}" data-act="gen"${aiOk ? '' : ' aria-disabled="true" title="Demande une clé IA (Réglages)"'}>${icon('globe')}<span>Générer avec l’IA</span>${needKey}</button>
       </div>
-      ${solo ? `<label class="row ex-hide-q"><span class="switch switch-sm"><input type="checkbox" data-f="hide-subjects"${st.hide ? ' checked' : ''}><span></span></span><span class="small">Cacher titres et questions (surprise du tirage, comme le jour J)</span></label>` : ''}
+      ${solo ? '<details class="ex-more"><summary>Choisir un sujet précis</summary>' : ''}
+      ${solo ? `<label class="row ex-hide-q"><span class="switch switch-sm"><input type="checkbox" data-f="hide-subjects"${st.hide ? ' checked' : ''}><span></span></span><span class="small">Cacher titres et questions avant le tirage</span></label>` : ''}
       <div class="ex-chips ex-theme-filter" role="tablist" aria-label="Filtrer par thème" data-b="chips"></div>
       <div class="ex-sgrid" data-b="grid"></div>
+      ${solo ? '</details>' : ''}
     </div>`;
     function paint() {
       const all = store.subjects();
@@ -1645,7 +1594,7 @@
       const bar = $('[data-b="teams-bar"]', root);
       if (!bar) return;
       const link = teamsValid(s.teamsLink);
-      if (s.phase === 'done' || (s.phase === 'review' && !link)) { bar.innerHTML = ''; bar.hidden = true; return; }
+      if (s.phase === 'done' || (!link && (s.phase === 'review' || (s.phase === 'prep' && $('[data-f="teams"]', root))))) { bar.innerHTML = ''; bar.hidden = true; return; }
       bar.hidden = false;
       bar.innerHTML = link
         ? `<span class="ex-teams-ic">${icon('video')}</span><span class="grow small"><b>Réunion ${meetingApp(link)}</b> <span class="muted ex-teams-url">${esc(link.replace(/^https:\/\//, '').slice(0, 60))}${link.length > 68 ? '…' : ''}</span></span>
@@ -2658,16 +2607,13 @@
         <div class="ex-pgrid">${p.map((x) => `<div class="card ex-pron" data-search="${sv(x.word, x.tip)}">${sayBtn(x.word)}<div><b lang="en">${esc(x.word)}</b><span class="ex-ipa">${esc(x.ipa || '')}</span><small>${esc(x.tip || '')}</small></div></div>`).join('')}</div>`;
     }
     if (tab === 'jourj') {
-      const info = examInfo();
-      const cd = countdown();
       const done = dayChecks();
       const groups = arr(f.checklist).length ? f.checklist : [
         { when: 'La veille', items: ['Imprimer la convocation', 'Préparer la pièce d’identité', 'Tester Teams (son, caméra, micro)'] },
         { when: 'Le matin', items: ['Ouvrir le mail avec le lien', 'Prévoir la demi-journée', 'Eau, papier, stylos'] },
         { when: 'Pendant l’oral', items: ['Annoncer le plan', 'Regarder la caméra', 'Faire répéter si besoin'] }
       ];
-      return `<section class="card card-pad ex-dday"><span class="eyebrow">${icon('calendar')}${esc(info.title)}</span><b class="ex-count-big">${esc(cd.big)}</b><p class="muted">${esc(cd.text)} · ${esc(info.mode)}</p></section>
-        ${groups.map((g) => `<section class="card card-pad ex-fgroup"><h3 class="h3">${esc(g.when)}</h3><ul class="ex-daylist">${arr(g.items).map((it) => { const k = g.when + '|' + it; return `<li data-search="${sv(it)}"><label class="ex-daycheck"><input type="checkbox" data-day="${esc(k)}"${done[k] ? ' checked' : ''}><span class="ex-box">${icon('check')}</span><span>${esc(it)}</span></label></li>`; }).join('')}</ul></section>`).join('')}
+      return `${groups.map((g) => `<section class="card card-pad ex-fgroup"><h3 class="h3">${esc(g.when)}</h3><ul class="ex-daylist">${arr(g.items).map((it) => { const k = g.when + '|' + it; return `<li data-search="${sv(it)}"><label class="ex-daycheck"><input type="checkbox" data-day="${esc(k)}"${done[k] ? ' checked' : ''}><span class="ex-box">${icon('check')}</span><span>${esc(it)}</span></label></li>`; }).join('')}</ul></section>`).join('')}
         <div class="row center"><button type="button" class="btn btn-ghost btn-sm" data-act="day-reset">${icon('refresh')}<span>Tout décocher</span></button></div>`;
     }
     return none('Cet onglet');
@@ -2678,7 +2624,7 @@
     root.innerHTML = `<div class="screen ex ex-fiches">
       <header class="ex-fhead">
         <div class="row"><button type="button" class="icon-btn hide-mobile" data-go="#/" aria-label="Accueil">${icon('chevron-left')}</button><h1 class="h1">Fiches</h1><span class="spacer"></span>
-          <div class="ex-rate"><span class="small muted">Débit</span><div class="seg" role="radiogroup" aria-label="Débit de lecture">${[[1, 'Normal'], [0.8, 'Lent']].map(([v, l]) => `<button type="button" role="radio" data-rate="${v}" class="${(Number(prefs().rate) || 1) === v ? 'on' : ''}" aria-checked="${(Number(prefs().rate) || 1) === v}">${l}</button>`).join('')}</div></div></div>
+          <div class="ex-rate"><span class="small muted">Voix</span><div class="seg" role="radiogroup" aria-label="Vitesse de la voix">${[[1, 'Normal'], [0.8, 'Lent']].map(([v, l]) => `<button type="button" role="radio" data-rate="${v}" class="${(Number(prefs().rate) || 1) === v ? 'on' : ''}" aria-checked="${(Number(prefs().rate) || 1) === v}">${l}</button>`).join('')}</div></div></div>
         <div class="ex-ftabs" role="tablist" aria-label="Fiches">${FICHE_TABS.map((t) => `<a href="#/fiches/${t.id}" role="tab" class="${t.id === tab ? 'on' : ''}" aria-selected="${t.id === tab}">${esc(t.label)}</a>`).join('')}</div>
         <label class="search search-lg"><span>${icon('search')}</span><input type="search" placeholder="Rechercher (mot, expression, règle…)" aria-label="Rechercher dans les fiches" data-f="q" value="${esc(prefs().ficheQuery || '')}"></label>
       </header>

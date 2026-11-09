@@ -282,7 +282,7 @@
     const scale = clamp(Number(settings().fontScale) || 1, 0.7, 2);
     document.documentElement.dataset.theme = t;
     document.documentElement.style.setProperty('--font-scale', String(scale));
-    $$('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', t === 'dark' ? '#000000' : '#f2f2f7'));
+    $$('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', t === 'dark' ? '#0b0c11' : '#f4f5f9'));
   }
   if (darkMQ && darkMQ.addEventListener) darkMQ.addEventListener('change', applyTheme);
 
