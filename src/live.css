@@ -41,13 +41,13 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, .25), 0 18px 40px -24px rgba(10, 12, 30, .55);
   border-radius: var(--r-lg, 20px);
 }
-.lv-stage.is-on { border-color: rgba(139, 147, 255, .22); }
+.lv-stage.is-on { border-color: rgba(96, 165, 250, .22); }
 
 /* Départ : un seul gros bouton */
 .lv-start { display: grid; justify-items: center; gap: 10px; padding: 14px 4px 6px; text-align: center; }
 .lv-start-ic {
   display: grid; place-items: center; width: 60px; height: 60px; border-radius: 20px;
-  color: #c7ccff; background: rgba(139, 147, 255, .16); box-shadow: inset 0 0 0 1px rgba(139, 147, 255, .22);
+  color: #c7ccff; background: rgba(96, 165, 250, .16); box-shadow: inset 0 0 0 1px rgba(96, 165, 250, .22);
 }
 .lv-start-ic svg.ico { width: 30px; height: 30px; }
 .lv-start-t { margin: 4px 0 0; font: 700 24px/1.2 var(--font-display, var(--font)); letter-spacing: -.015em; color: var(--lv-en); }
@@ -67,14 +67,14 @@
 .lv-status .ex-live-dot { width: 9px; height: 9px; transition: background-color .25s; }
 .lv-status.on { color: #ffd3d3; background: rgba(248, 113, 113, .14); }
 .lv-status.on .ex-live-dot { background: #f87171; animation: lv-pulse 1.6s ease-out infinite; }
-.lv-status[data-k="talk"] { color: #e3d9ff; background: rgba(167, 139, 250, .18); }
-.lv-status[data-k="talk"] .ex-live-dot { background: #c4b5fd; animation: lv-pulse-v 1s ease-out infinite; }
-.lv-status[data-k="busy"] { color: #d6dbff; background: rgba(139, 147, 255, .18); }
-.lv-status[data-k="busy"] .ex-live-dot { background: #a5adff; animation: lv-blink 1s ease-in-out infinite; }
+.lv-status[data-k="talk"] { color: #e3d9ff; background: rgba(96, 165, 250, .18); }
+.lv-status[data-k="talk"] .ex-live-dot { background: #bfdbfe; animation: lv-pulse-v 1s ease-out infinite; }
+.lv-status[data-k="busy"] { color: #dbeafe; background: rgba(96, 165, 250, .18); }
+.lv-status[data-k="busy"] .ex-live-dot { background: #93c5fd; animation: lv-blink 1s ease-in-out infinite; }
 .lv-status[data-k="ready"] { color: #c9f7d8; background: rgba(74, 222, 128, .14); }
 .lv-status[data-k="ready"] .ex-live-dot { background: #4ade80; animation: none; }
 @keyframes lv-pulse { 0% { box-shadow: 0 0 0 0 rgba(248, 113, 113, .55); } 100% { box-shadow: 0 0 0 9px transparent; } }
-@keyframes lv-pulse-v { 0% { box-shadow: 0 0 0 0 rgba(196, 181, 253, .6); } 100% { box-shadow: 0 0 0 9px transparent; } }
+@keyframes lv-pulse-v { 0% { box-shadow: 0 0 0 0 rgba(147, 197, 253, .6); } 100% { box-shadow: 0 0 0 9px transparent; } }
 @keyframes lv-blink { 50% { opacity: .35; } }
 
 .lv-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
@@ -84,7 +84,7 @@
 }
 .lv-ghost.btn svg.ico { width: 16px; height: 16px; }
 @media (hover: hover) { .lv-ghost.btn:hover { color: var(--lv-en); background: rgba(255, 255, 255, .07); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16); } }
-.lv-ghost.btn.on { color: #d6dbff; background: rgba(139, 147, 255, .16); box-shadow: inset 0 0 0 1px rgba(139, 147, 255, .3); }
+.lv-ghost.btn.on { color: #dbeafe; background: rgba(96, 165, 250, .16); box-shadow: inset 0 0 0 1px rgba(96, 165, 250, .3); }
 .lv-esc { font-size: 13.5px; color: var(--text-3); }
 
 /* Bloc « Jury » : question entendue + traduction ; en direct pendant que le jury parle */
@@ -95,18 +95,18 @@
 .lv-q-tag {
   flex: none; margin-top: 2px; padding: 3px 8px; border-radius: 7px;
   font: 700 11px/1.2 var(--font); letter-spacing: .08em; text-transform: uppercase;
-  color: #ddd4ff; background: rgba(167, 139, 250, .2);
+  color: #ddd4ff; background: rgba(96, 165, 250, .2);
 }
 .lv-q-body { display: grid; gap: 2px; min-width: 0; flex: 1; }
 .lv-q-en.ex-live-en { margin: 0; font: 600 17px/1.38 var(--font); color: var(--lv-q); letter-spacing: -.005em; }
 .lv-q-fr { margin: 0; font-size: 15px; line-height: 1.4; color: var(--lv-q-fr); }
 .lv-q-fr .ex-live-fr { margin: 0; font-size: inherit; color: inherit; }
 .lv-interim.ex-live-interim { margin: 0; font: italic 600 17px/1.38 var(--font); color: var(--lv-en); }
-.lv-interim::after { content: ""; display: inline-block; width: 2px; height: 1em; margin-left: 3px; vertical-align: -.12em; background: #c4b5fd; animation: lv-blink 1s steps(2, start) infinite; }
+.lv-interim::after { content: ""; display: inline-block; width: 2px; height: 1em; margin-left: 3px; vertical-align: -.12em; background: #bfdbfe; animation: lv-blink 1s steps(2, start) infinite; }
 .lv-q-wait { margin: 0; font-size: 14px; font-style: italic; color: var(--lv-q-fr); }
 .lv-stage:not(.has-interim) .lv-interim, .lv-stage:not(.has-interim) .lv-q-wait, .lv-stage:not(.has-interim) .lv-q-live { display: none; }
 .lv-stage.has-interim .lv-q-en, .lv-stage.has-interim .lv-q-fr { display: none; }
-.lv-stage.has-interim .lv-q { box-shadow: inset 0 0 0 1px rgba(167, 139, 250, .38); background: rgba(167, 139, 250, .08); }
+.lv-stage.has-interim .lv-q { box-shadow: inset 0 0 0 1px rgba(96, 165, 250, .38); background: rgba(96, 165, 250, .08); }
 .lv-stage.has-interim .lv-empty { display: none; }
 /* Avant la 1re réponse : la phrase du jury occupe la scène, en grand. */
 .lv-stage.has-interim .lv-q-live { flex: 1 1 auto; align-items: center; padding: 18px 22px; }
@@ -141,13 +141,13 @@
 .lv-ans.is-streaming .lv-line:last-child:not(:has(.lv-tr:not(:empty))) .lv-en::after,
 .lv-ans.is-streaming .lv-line:last-child .lv-tr:not(:empty)::after {
   content: ""; display: inline-block; width: 3px; height: .9em; margin-left: 4px; vertical-align: -.1em;
-  border-radius: 2px; background: #a5adff; animation: lv-blink 1s steps(2, start) infinite;
+  border-radius: 2px; background: #93c5fd; animation: lv-blink 1s steps(2, start) infinite;
 }
 /* Réponse en préparation : deux lignes qui scintillent */
 .lv-ans.is-streaming:empty { gap: .45em; }
 .lv-ans.is-streaming:empty::before, .lv-ans.is-streaming:empty::after {
   content: ""; display: block; height: .62em; border-radius: 8px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, .06) 0%, rgba(165, 173, 255, .2) 50%, rgba(255, 255, 255, .06) 100%) 0 0 / 200% 100%;
+  background: linear-gradient(90deg, rgba(255, 255, 255, .06) 0%, rgba(147, 197, 253, .2) 50%, rgba(255, 255, 255, .06) 100%) 0 0 / 200% 100%;
   animation: lv-shimmer 1.3s linear infinite;
 }
 .lv-ans.is-streaming:empty::before { width: 82%; }

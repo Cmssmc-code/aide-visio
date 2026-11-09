@@ -23,7 +23,7 @@
   --font: "Inter var", Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --font-display: "Inter var", Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
 
-  /* Neutres froids, légèrement teintés indigo */
+  /* Neutres froids, légèrement teintés bleu */
   --bg: #f4f5f9;
   --bg-elev: #ffffff;
   --surface: #ffffff;
@@ -41,18 +41,18 @@
   --input-bg-focus: #ffffff;
   --input-border: rgba(18, 24, 48, .16);
 
-  /* Couleur de marque : indigo. --accent sert au texte et aux icônes,
+  /* Couleur de marque : bleu. --accent sert au texte et aux icônes,
      --accent-fill aux aplats sous texte blanc (contraste >= 4.5:1). */
-  --accent: #4f46e5;
-  --accent-2: #6366f1;
-  --accent-fill: #4f46e5;
-  --accent-fill-hover: #4338ca;
+  --accent: #2563eb;
+  --accent-2: #3b82f6;
+  --accent-fill: #2563eb;
+  --accent-fill-hover: #1d4ed8;
   --on-accent: #ffffff;
-  --accent-text: #4338ca;
-  --accent-soft: rgba(79, 70, 229, .1);
-  --accent-soft-2: rgba(79, 70, 229, .16);
-  --accent-ring: rgba(79, 70, 229, .3);
-  --brand: linear-gradient(135deg, #6366f1 0%, #4f46e5 50%, #7c3aed 100%);
+  --accent-text: #1d4ed8;
+  --accent-soft: rgba(37, 99, 235, .1);
+  --accent-soft-2: rgba(37, 99, 235, .16);
+  --accent-ring: rgba(37, 99, 235, .3);
+  --brand: linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #7c3aed 100%);
 
   --them: #6d28d9;
   --them-soft: rgba(109, 40, 217, .09);
@@ -105,7 +105,7 @@
   --focus: var(--accent);
   --safe-top: env(safe-area-inset-top, 0px);
 
-  --aurora-1: rgba(99, 102, 241, .22);
+  --aurora-1: rgba(59, 130, 246, .22);
   --aurora-2: rgba(124, 58, 237, .14);
   --aurora-3: rgba(14, 165, 233, .12);
   --aurora-4: rgba(236, 72, 153, .08);
@@ -129,15 +129,15 @@
   --input-bg-focus: #11131a;
   --input-border: rgba(255, 255, 255, .14);
 
-  --accent: #8b93ff;
-  --accent-2: #a5b4fc;
-  --accent-fill: #5b55ee;
-  --accent-fill-hover: #6a64f5;
-  --accent-text: #a5adff;
-  --accent-soft: rgba(139, 147, 255, .14);
-  --accent-soft-2: rgba(139, 147, 255, .22);
-  --accent-ring: rgba(139, 147, 255, .4);
-  --brand: linear-gradient(135deg, #818cf8 0%, #6366f1 50%, #a78bfa 100%);
+  --accent: #60a5fa;
+  --accent-2: #93c5fd;
+  --accent-fill: #2563eb;
+  --accent-fill-hover: #3b82f6;
+  --accent-text: #93c5fd;
+  --accent-soft: rgba(96, 165, 250, .14);
+  --accent-soft-2: rgba(96, 165, 250, .22);
+  --accent-ring: rgba(96, 165, 250, .4);
+  --brand: linear-gradient(135deg, #60a5fa 0%, #3b82f6 50%, #a78bfa 100%);
 
   --them: #c4b5fd;
   --them-soft: rgba(167, 139, 250, .14);
@@ -173,7 +173,7 @@
   --shadow-hover: 0 2px 4px rgba(0, 0, 0, .35), 0 12px 28px rgba(0, 0, 0, .35);
   --shadow-lg: 0 2px 6px rgba(0, 0, 0, .4), 0 20px 48px rgba(0, 0, 0, .55);
 
-  --aurora-1: rgba(99, 102, 241, .2);
+  --aurora-1: rgba(59, 130, 246, .2);
   --aurora-2: rgba(124, 58, 237, .12);
   --aurora-3: rgba(14, 165, 233, .07);
   --aurora-4: rgba(236, 72, 153, .05);
@@ -406,7 +406,7 @@ small { font-size: 13px; }
 .app-icon {
   width: 52px; height: 52px; border-radius: 15px;
   background: var(--brand);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3), 0 6px 16px -6px rgba(79, 70, 229, .6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3), 0 6px 16px -6px rgba(37, 99, 235, .6);
 }
 .app-icon svg.ico { width: 28px; height: 28px; }
 .home-sub { font-size: 16px; color: var(--text-2); margin-top: 6px; }
@@ -577,13 +577,13 @@ small { font-size: 13px; }
   color: #fff;
   background: var(--brand);
   border-color: transparent;
-  box-shadow: 0 1px 2px rgba(16, 24, 40, .12), 0 14px 30px -14px rgba(79, 70, 229, .7);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .12), 0 14px 30px -14px rgba(37, 99, 235, .7);
 }
 .ex-role.is-primary .ex-role-ic { color: #fff; background: rgba(255, 255, 255, .18); }
 .ex-role.is-primary .ex-role-text span { color: rgba(255, 255, 255, .86); }
 .ex-role.is-primary .chev { color: rgba(255, 255, 255, .8); }
 @media (hover: hover) {
-  .ex-role.is-primary:hover { border-color: transparent; box-shadow: 0 2px 4px rgba(16, 24, 40, .14), 0 18px 36px -14px rgba(79, 70, 229, .8); }
+  .ex-role.is-primary:hover { border-color: transparent; box-shadow: 0 2px 4px rgba(16, 24, 40, .14), 0 18px 36px -14px rgba(37, 99, 235, .8); }
   .ex-role.is-primary:hover .chev { color: #fff; }
 }
 .ex-home .ex-resume { margin: 0 0 14px; }
@@ -655,9 +655,9 @@ small { font-size: 13px; }
    (>= 4.5:1 partout, y compris en mode sombre où --brand est plus clair). */
 .ex-role.is-primary,
 [data-theme="dark"] .ex-role.is-primary {
-  background: linear-gradient(135deg, #5b55ee 0%, #4f46e5 50%, #6d28d9 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #2563eb 50%, #6d28d9 100%);
 }
-[data-theme="dark"] .ex-role.is-primary { box-shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 14px 30px -16px rgba(91, 85, 238, .55); }
+[data-theme="dark"] .ex-role.is-primary { box-shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 14px 30px -16px rgba(37, 99, 235, .55); }
 .ex-role.is-primary .ex-role-text span { color: rgba(255, 255, 255, .92); }
 
 /* Titre des barres : un cran plus présent que le texte courant */
@@ -824,7 +824,7 @@ body { background: var(--bg); }
 .ex-role.is-primary,
 [data-theme="dark"] .ex-role.is-primary {
   background: var(--accent-fill);
-  box-shadow: 0 1px 2px rgba(16, 24, 40, .1), 0 8px 20px -12px rgba(79, 70, 229, .5);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .1), 0 8px 20px -12px rgba(37, 99, 235, .5);
 }
 .ex-role-ic,
 .ex-role-solo .ex-role-ic,
