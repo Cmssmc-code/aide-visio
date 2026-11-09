@@ -270,6 +270,14 @@
 
     body.innerHTML = `
       ${section('Clé IA', `
+        ${(s.geminiKey || s.openaiKey || s.groqKey) ? '' : `<div class="list-row st-key st-unlock">
+          <div class="st-key-head"><div class="st-key-name">${tile('lock', 'blue')}<b>Code des clés</b></div></div>
+          <div class="st-key-field">
+            <input type="text" data-f="vault-code" placeholder="Votre code (ex. mot-mot-mot-mot-12)" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Code des clés">
+            <button type="button" class="btn btn-sm btn-primary" data-act="unlock">Débloquer</button>
+          </div>
+          <div class="small muted st-key-status" data-status="vault" aria-live="polite">Entrez votre code une fois : les clés s’installent sur cet appareil.</div>
+        </div>`}
         ${keyRow({ id: 'gemini', name: 'Google Gemini', icon: 'sparkles', color: 'blue', badge: '<span class="pill pill-ok">Gratuite</span>', url: 'https://aistudio.google.com/apikey', linkLabel: 'Obtenir ma clé gratuite', placeholder: 'Collez votre clé ici (AIza…)', hint: 'Une seule clé suffit pour tout utiliser.' })}`)}
 
       ${section('Micro, son et caméra', `
@@ -453,6 +461,20 @@
       },
       import: () => doImport(),
       diag: () => go('#/diag'),
+      unlock: async () => {
+        const inp = el.querySelector('[data-f="vault-code"]');
+        const st = el.querySelector('[data-status="vault"]');
+        const code = inp ? inp.value.trim() : '';
+        if (!code) { if (st) st.textContent = 'Entrez le code.'; if (inp) inp.focus(); return; }
+        if (st) st.textContent = 'Déverrouillage…';
+        try {
+          await S.app.unlockVault(code);
+          toast('Clés IA installées sur cet appareil.', 'ok');
+          S.app.refresh();
+        } catch (e) {
+          if (st) st.textContent = e.code === 'BAD_CODE' ? 'Code incorrect : vérifiez-le et réessayez.' : (e.message || 'Déverrouillage impossible.');
+        }
+      },
       wipe: () => wipe()
     });
 

@@ -13,7 +13,7 @@ const OUT = path.resolve(ROOT, args.out || path.join('dist', 'site'));
 const BASE = normalizeBase(args.base || basePathFromPackage() || '/aidevisio/');
 const STRICT = !!args.strict;
 
-const EXPECTED_JS = ['js/util.js', 'js/store.js', 'js/docs.js', 'js/ai.js', 'js/audio.js', 'js/app.js', 'js/devices.js', 'js/screens.js',
+const EXPECTED_JS = ['js/util.js', 'js/store.js', 'js/vault.js', 'js/docs.js', 'js/ai.js', 'js/audio.js', 'js/app.js', 'js/devices.js', 'js/screens.js',
   'js/exam-fiches.js', 'js/exam-subjects.js', 'js/exam-subjects-2.js', 'js/exam-ai.js', 'js/exam.js'];
 const EXPECTED_CSS = ['styles.css', 'screens.css', 'exam.css', 'design.css', 'live.css'];
 const INLINE_MAX = 100 * 1024;

@@ -396,14 +396,46 @@
     cleanupSheet,
     install: installApp,
     canInstall() { return !!installEvt; },
+    unlockVault,
     showUpdate(worker) { showUpdateBanner(worker || { postMessage() {} }); }
   });
 
   // Lien d'installation des clés : #/cles?d=<base64url JSON>. Le fragment ne quitte jamais le PC ;
   // les clés sont rangées comme si on les avait collées dans Réglages, puis le lien est effacé de l'adresse.
+  async function unlockVault(code) {
+    const v = S.vault;
+    if (!v || !window.crypto || !crypto.subtle) throw new Error('Coffre des clés indisponible sur ce navigateur.');
+    const b = (x) => Uint8Array.from(atob(x), (c) => c.charCodeAt(0));
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(String(code || '').trim().toLowerCase()), 'PBKDF2', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt: b(v.salt), iterations: v.iter }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    let plain;
+    try { plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b(v.iv) }, key, b(v.data)); }
+    catch (e) { const er = new Error('Code incorrect.'); er.code = 'BAD_CODE'; throw er; }
+    const data = JSON.parse(new TextDecoder().decode(plain));
+    const patch = { rememberKeys: true, provider: 'auto' };
+    ['geminiKey', 'openaiKey', 'groqKey', 'claudeKey'].forEach((k) => { if (typeof data[k] === 'string' && data[k]) patch[k] = data[k]; });
+    S.store.setSettings(patch);
+    try { localStorage.setItem('aidevisio.vaultCode', String(code).trim().toLowerCase()); } catch (e) {  }
+    return Object.keys(patch).length - 2;
+  }
+
   function absorbKeyLink() {
+    const c = /^#\/cles\?code=([A-Za-z0-9-]+)/.exec(location.hash || '');
+    if (c) {
+      history.replaceState(null, '', location.pathname + location.search + '#/');
+      unlockVault(c[1]).then(() => { toast('Clés IA installées sur cet appareil.', 'ok'); route(true); })
+        .catch((e) => toast(e.code === 'BAD_CODE' ? 'Code des clés incorrect : rien n’a été changé.' : errMsg(e), 'warn'));
+      return;
+    }
     const m = /^#\/cles\?d=([A-Za-z0-9_-]+)/.exec(location.hash || '');
-    if (!m) return;
+    if (!m) {
+      // Coffre déjà ouvert sur cet appareil mais clés absentes (effacées ou coffre renouvelé) : on rouvre en silence.
+      const st = settings();
+      let saved = '';
+      try { saved = localStorage.getItem('aidevisio.vaultCode') || ''; } catch (e) {  }
+      if (saved && !st.geminiKey && !st.openaiKey && !st.groqKey) unlockVault(saved).catch(() => {});
+      return;
+    }
     history.replaceState(null, '', location.pathname + location.search + '#/settings');
     try {
       const b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
