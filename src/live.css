@@ -22,121 +22,222 @@
   .lv-step-b > .btn { justify-self: stretch; justify-content: center; }
 }
 
-/* ---------- 2. Assistant en direct (page, plein écran, fenêtre flottante) ---------- */
+/* ---------- 2. Sous-titres en direct (page, plein écran, fenêtre flottante) ----------
+   Toujours sur fond sombre (data-theme="dark" posé sur la scène) pour ressembler à des sous-titres.
+   Hiérarchie : la réponse en anglais (gros, blanc) ; sa traduction juste dessous (plus petite, atténuée) ;
+   la question du jury en haut, plus discrète ; mots-clés compacts en bas. */
 
 .ex-call .lv-stage { margin: 0 auto 16px; width: 100%; max-width: 1100px; padding: 18px 22px 16px; }
-.lv-stage { display: flex; flex-direction: column; gap: 12px; min-height: 0; border: 1px solid var(--sep); }
-.lv-stage.is-on { border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.lv-stage {
+  --lv-en: #ffffff;
+  --lv-fr: #a9b6cf;
+  --lv-q: #e4e8f1;
+  --lv-q-fr: #9aa4b8;
+  --lv-line: rgba(255, 255, 255, .07);
+  display: flex; flex-direction: column; gap: 12px; min-height: 0;
+  color: var(--text);
+  background:
+    radial-gradient(120% 90% at 50% -20%, rgba(99, 102, 241, .16) 0%, transparent 55%),
+    linear-gradient(180deg, #12141c 0%, #0b0c11 100%);
+  border: 1px solid rgba(255, 255, 255, .07);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .25), 0 18px 40px -24px rgba(10, 12, 30, .55);
+  border-radius: var(--r-lg, 20px);
+}
+.lv-stage.is-on { border-color: rgba(139, 147, 255, .22); }
 
 /* Départ : un seul gros bouton */
 .lv-start { display: grid; justify-items: center; gap: 10px; padding: 14px 4px 6px; text-align: center; }
 .lv-start-ic {
-  display: grid; place-items: center; width: 56px; height: 56px; border-radius: 18px;
-  color: var(--accent-text, var(--accent)); background: var(--accent-soft);
+  display: grid; place-items: center; width: 60px; height: 60px; border-radius: 20px;
+  color: #c7ccff; background: rgba(139, 147, 255, .16); box-shadow: inset 0 0 0 1px rgba(139, 147, 255, .22);
 }
-.lv-start-ic svg.ico { width: 28px; height: 28px; }
-.lv-start-t { margin: 2px 0 0; font: 700 22px/1.2 var(--font-display, var(--font)); letter-spacing: -.01em; }
-.lv-start-p { margin: 0; max-width: 46ch; color: var(--text-2); line-height: 1.5; }
-.lv-go { min-height: 56px; padding-inline: 28px; font-size: 18px; margin-top: 4px; }
-.lv-tip { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 0; color: var(--text-2); font-size: 14px; }
+.lv-start-ic svg.ico { width: 30px; height: 30px; }
+.lv-start-t { margin: 4px 0 0; font: 700 24px/1.2 var(--font-display, var(--font)); letter-spacing: -.015em; color: var(--lv-en); }
+.lv-start-p { margin: 0; max-width: 48ch; color: var(--text-2); line-height: 1.55; }
+.lv-start-p b { color: var(--lv-en); font-weight: 650; }
+.lv-go { min-height: 56px; padding-inline: 28px; font-size: 18px; margin-top: 6px; }
+.lv-tip { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 0; color: var(--text-3); font-size: 14px; }
 
-/* État d'écoute */
-.lv-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 32px; }
-.lv-status { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px 4px 10px; border-radius: 999px; background: var(--fill); }
-.lv-status b { font-size: 14px; font-weight: 650; }
-.lv-status.on { background: var(--err-soft); color: var(--err); }
-.lv-status .ex-live-dot { width: 10px; height: 10px; }
-.lv-status .ex-live-dot.on { animation: lv-pulse 1.4s ease-out infinite; }
-@keyframes lv-pulse {
-  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--err) 55%, transparent); }
-  100% { box-shadow: 0 0 0 9px transparent; }
+/* En-tête : état clair à gauche, commandes discrètes à droite */
+.lv-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 34px; }
+.lv-status {
+  display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 13px 0 11px; border-radius: 999px;
+  background: rgba(255, 255, 255, .06); color: var(--text-2);
+  transition: background-color .25s, color .25s;
 }
+.lv-status b { font-size: 14px; font-weight: 650; letter-spacing: -.005em; white-space: nowrap; }
+.lv-status .ex-live-dot { width: 9px; height: 9px; transition: background-color .25s; }
+.lv-status.on { color: #ffd3d3; background: rgba(248, 113, 113, .14); }
+.lv-status.on .ex-live-dot { background: #f87171; animation: lv-pulse 1.6s ease-out infinite; }
+.lv-status[data-k="talk"] { color: #e3d9ff; background: rgba(167, 139, 250, .18); }
+.lv-status[data-k="talk"] .ex-live-dot { background: #c4b5fd; animation: lv-pulse-v 1s ease-out infinite; }
+.lv-status[data-k="busy"] { color: #d6dbff; background: rgba(139, 147, 255, .18); }
+.lv-status[data-k="busy"] .ex-live-dot { background: #a5adff; animation: lv-blink 1s ease-in-out infinite; }
+.lv-status[data-k="ready"] { color: #c9f7d8; background: rgba(74, 222, 128, .14); }
+.lv-status[data-k="ready"] .ex-live-dot { background: #4ade80; animation: none; }
+@keyframes lv-pulse { 0% { box-shadow: 0 0 0 0 rgba(248, 113, 113, .55); } 100% { box-shadow: 0 0 0 9px transparent; } }
+@keyframes lv-pulse-v { 0% { box-shadow: 0 0 0 0 rgba(196, 181, 253, .6); } 100% { box-shadow: 0 0 0 9px transparent; } }
+@keyframes lv-blink { 50% { opacity: .35; } }
 
-.lv-empty { display: grid; gap: 8px; padding: 6px 0; }
-.lv-wait { font-size: 18px; color: var(--text-2); }
+.lv-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+.lv-ghost.btn {
+  height: 32px; padding: 0 12px; gap: 6px; font-size: 13.5px; font-weight: 600; border-radius: 10px;
+  color: var(--text-2); background: transparent; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1);
+}
+.lv-ghost.btn svg.ico { width: 16px; height: 16px; }
+@media (hover: hover) { .lv-ghost.btn:hover { color: var(--lv-en); background: rgba(255, 255, 255, .07); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16); } }
+.lv-ghost.btn.on { color: #d6dbff; background: rgba(139, 147, 255, .16); box-shadow: inset 0 0 0 1px rgba(139, 147, 255, .3); }
+.lv-esc { font-size: 13.5px; color: var(--text-3); }
+
+/* Bloc « Jury » : question entendue + traduction ; en direct pendant que le jury parle */
+.lv-stage .lv-q {
+  display: flex; align-items: flex-start; gap: 12px; margin: 0; padding: 10px 14px; border-radius: 14px;
+  background: rgba(255, 255, 255, .045); box-shadow: inset 0 0 0 1px var(--lv-line);
+}
+.lv-q-tag {
+  flex: none; margin-top: 2px; padding: 3px 8px; border-radius: 7px;
+  font: 700 11px/1.2 var(--font); letter-spacing: .08em; text-transform: uppercase;
+  color: #ddd4ff; background: rgba(167, 139, 250, .2);
+}
+.lv-q-body { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.lv-q-en.ex-live-en { margin: 0; font: 600 17px/1.38 var(--font); color: var(--lv-q); letter-spacing: -.005em; }
+.lv-q-fr { margin: 0; font-size: 15px; line-height: 1.4; color: var(--lv-q-fr); }
+.lv-q-fr .ex-live-fr { margin: 0; font-size: inherit; color: inherit; }
+.lv-interim.ex-live-interim { margin: 0; font: italic 600 17px/1.38 var(--font); color: var(--lv-en); }
+.lv-interim::after { content: ""; display: inline-block; width: 2px; height: 1em; margin-left: 3px; vertical-align: -.12em; background: #c4b5fd; animation: lv-blink 1s steps(2, start) infinite; }
+.lv-q-wait { margin: 0; font-size: 14px; font-style: italic; color: var(--lv-q-fr); }
+.lv-stage:not(.has-interim) .lv-interim, .lv-stage:not(.has-interim) .lv-q-wait, .lv-stage:not(.has-interim) .lv-q-live { display: none; }
+.lv-stage.has-interim .lv-q-en, .lv-stage.has-interim .lv-q-fr { display: none; }
+.lv-stage.has-interim .lv-q { box-shadow: inset 0 0 0 1px rgba(167, 139, 250, .38); background: rgba(167, 139, 250, .08); }
+.lv-stage.has-interim .lv-empty { display: none; }
+/* Avant la 1re réponse : la phrase du jury occupe la scène, en grand. */
+.lv-stage.has-interim .lv-q-live { flex: 1 1 auto; align-items: center; padding: 18px 22px; }
+.lv-stage .lv-q-live .lv-interim { font-size: 26px; line-height: 1.3; white-space: normal; }
+.lv-stage .lv-q-live .lv-q-wait { font-size: 16px; margin-top: 4px; }
+/* Pendant que le jury parle, l'ancienne réponse s'efface doucement. */
+.lv-a, .lv-foot { transition: opacity .3s var(--ease-out, ease); }
+.lv-stage.has-interim .lv-a, .lv-stage.has-interim .lv-foot { opacity: .3; }
+
+/* Attente */
+.lv-empty { display: grid; gap: 10px; padding: 6px 0; }
+.lv-wait.ex-live-empty { font-size: 18px; line-height: 1.5; color: var(--text-2); }
 .lv-empty .lv-tip { justify-content: flex-start; }
 
-/* Question (courte), réponse (l'essentiel), traduction et mots clés */
-.lv-l { font: 700 11.5px/1 var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); margin-right: 4px; }
-.ex-live-q.lv-q {
-  margin: 0; padding: 0; background: none; border-radius: 0;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
-  color: var(--text-2); line-height: 1.4;
-}
-.lv-q .ex-live-en { display: inline; font: 600 16px/1.4 var(--font); color: var(--text-2); }
-.lv-a { min-height: 0; }
+/* Réponse : une phrase anglaise (grande) + sa traduction juste dessous, comme des sous-titres */
+.lv-a { min-height: 0; position: relative; }
 .ex-live-ans.lv-ans {
-  margin: 0; color: var(--text);
-  font: 650 clamp(24px, calc(1.1rem + 1.5vw), 40px)/1.32 var(--font-display, var(--font));
-  font-size: calc(clamp(24px, calc(1.1rem + 1.5vw), 40px) * var(--font-scale, 1));
-  letter-spacing: -.005em; max-width: 34em; text-wrap: pretty;
+  display: grid; gap: .5em; margin: 0; min-height: 0; white-space: normal; overflow-wrap: break-word;
+  font: 650 calc(clamp(22px, calc(1rem + 1.6vw), 30px) * var(--font-scale, 1))/1.22 var(--font-display, var(--font));
+  letter-spacing: -.012em; color: var(--lv-en);
 }
-.lv-sub { display: grid; gap: 8px; }
-.lv-fr { margin: 0; color: var(--text-2); font-size: 15px; line-height: 1.45; }
-.lv-fr .ex-live-fr { display: inline; margin: 0; font-size: inherit; }
-.lv-kw { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.lv-kw .pill { font-size: 14px; }
-/* Mot-clé : expression anglaise, traduction française dessous */
-.lv-kw .lv-kw-i { display: inline-grid; gap: 1px; height: auto; min-height: 26px; padding: 5px 12px; border-radius: 12px; line-height: 1.2; text-align: left; white-space: normal; }
-.lv-kw-i b { font-weight: 650; color: var(--text); }
-.lv-kw-fr { font-size: .86em; font-weight: 500; color: var(--text-2); }
-.lv-stage .ex-live-err { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--err-soft); color: var(--err); font-weight: 600; line-height: 1.4; text-align: left; }
+.lv-ans.is-streaming::after { content: none; }
+.lv-line { display: grid; gap: .16em; margin: 0; }
+.lv-en { text-wrap: pretty; }
+.lv-tr {
+  font: 500 max(14px, .6em)/1.34 var(--font); letter-spacing: 0; color: var(--lv-fr); text-wrap: pretty;
+}
+.lv-tr:empty { display: none; }
+.lv-line.is-new { animation: lv-in .32s var(--ease-out, ease) both; }
+@keyframes lv-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+/* Curseur de frappe à la fin du dernier texte reçu */
+.lv-ans.is-streaming .lv-line:last-child:not(:has(.lv-tr:not(:empty))) .lv-en::after,
+.lv-ans.is-streaming .lv-line:last-child .lv-tr:not(:empty)::after {
+  content: ""; display: inline-block; width: 3px; height: .9em; margin-left: 4px; vertical-align: -.1em;
+  border-radius: 2px; background: #a5adff; animation: lv-blink 1s steps(2, start) infinite;
+}
+/* Réponse en préparation : deux lignes qui scintillent */
+.lv-ans.is-streaming:empty { gap: .45em; }
+.lv-ans.is-streaming:empty::before, .lv-ans.is-streaming:empty::after {
+  content: ""; display: block; height: .62em; border-radius: 8px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, .06) 0%, rgba(165, 173, 255, .2) 50%, rgba(255, 255, 255, .06) 100%) 0 0 / 200% 100%;
+  animation: lv-shimmer 1.3s linear infinite;
+}
+.lv-ans.is-streaming:empty::before { width: 82%; }
+.lv-ans.is-streaming:empty::after { width: 58%; }
+@keyframes lv-shimmer { to { background-position: -200% 0; } }
+/* Longue réponse au plus petit : défilement doux, fondu en bas */
+.lv-a.is-scroll {
+  overflow-y: auto !important; scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .25) transparent;
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent);
+  padding-bottom: 22px;
+}
+
+/* Pied : mots-clés compacts (anglais · français) et Plus court / Réessayer */
+.lv-foot { display: flex; align-items: center; gap: 10px; min-height: 32px; }
+.lv-foot .lv-atools { margin-left: auto; flex: none; flex-wrap: nowrap; }
+.lv-kw-gap { flex: 1; }
+.ex-live-kw.lv-kw { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; flex: 1 1 auto; min-width: 0; }
+.lv-kw .lv-kw-i.pill {
+  display: inline-flex; align-items: baseline; gap: 0; height: auto; min-height: 28px; padding: 4px 11px; border-radius: 9px;
+  font-size: 14.5px; line-height: 1.3; white-space: nowrap;
+  color: var(--lv-en); background: rgba(255, 255, 255, .06); box-shadow: inset 0 0 0 1px var(--lv-line);
+}
+.lv-kw-i b { font-weight: 650; color: var(--lv-en); }
+.lv-kw-fr { font-weight: 500; color: var(--lv-fr); }
+.lv-kw-fr::before { content: "·"; margin: 0 7px; color: rgba(255, 255, 255, .35); }
+
+/* Erreurs et alertes */
+.lv-stage .ex-live-err { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; padding: 10px 12px; border-radius: 12px; background: rgba(248, 113, 113, .14); color: #fecaca; font-weight: 600; line-height: 1.4; text-align: left; }
 .lv-stage .ex-live-err > span { flex: 1 1 220px; }
 .lv-stage .ex-live-err > .lv-err-btns { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 8px; }
 .lv-start .ex-live-err { max-width: 560px; }
-.lv-warn { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; border-radius: 12px; background: var(--warn-soft); color: var(--warn); font-weight: 600; line-height: 1.4; }
-.lv-esc { font-size: 14px; color: var(--text-3); }
-.lv-tools { margin-top: 2px; }
-.lv-interim { font-size: 14px; }
+.lv-warn { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; border-radius: 12px; background: rgba(251, 191, 36, .14); color: #fde68a; font-weight: 600; line-height: 1.4; }
 
-/* Plein écran (PC) : réponse en haut au centre, juste sous la caméra */
+/* Plein écran (PC) : sous-titres centrés, en très grand, juste sous la caméra */
 .lv-stage:fullscreen {
   max-width: none; margin: 0; border: 0; border-radius: 0; box-shadow: none;
-  padding: 3vh 6vw 3vh; gap: 2vh; background: var(--bg-elev, var(--bg)); color: var(--text);
-  overflow: hidden;
+  padding: 3vh 6vw 3vh; gap: 2.2vh; overflow: hidden;
+  background: radial-gradient(90% 70% at 50% 0%, rgba(99, 102, 241, .14) 0%, transparent 60%), #08090d;
 }
-.lv-stage:fullscreen > * { width: 100%; max-width: 1200px; margin-inline: auto; }
+.lv-stage:fullscreen > * { width: 100%; max-width: 1280px; margin-inline: auto; }
 .lv-stage:fullscreen .lv-a { flex: 1 1 auto; overflow: hidden; }
-.lv-stage:fullscreen .lv-ans { max-width: none; text-align: center; }
-.lv-stage:fullscreen .lv-q, .lv-stage:fullscreen .lv-al { text-align: center; }
-.lv-stage:fullscreen .lv-q .ex-live-en { font-size: 20px; }
-.lv-stage:fullscreen .lv-sub { justify-items: center; text-align: center; }
-.lv-stage:fullscreen .lv-fr { font-size: 18px; }
-.lv-stage:fullscreen .lv-head, .lv-stage:fullscreen .lv-tools { justify-content: center; }
-.lv-stage:fullscreen .lv-head .spacer { display: none; }
-.lv-stage::backdrop { background: var(--bg, #000); }
+.lv-stage:fullscreen .lv-ans, .lv-stage:fullscreen .lv-q-body { text-align: center; justify-items: center; }
+.lv-stage:fullscreen .lv-ans { max-width: 34em; margin-inline: auto; }
+.lv-stage:fullscreen .lv-q { max-width: 980px; background: none; box-shadow: none; justify-content: center; }
+.lv-stage:fullscreen .lv-q-tag { display: none; }
+.lv-stage:fullscreen .lv-q-en { font-size: 21px; }
+.lv-stage:fullscreen .lv-q-fr { font-size: 17px; }
+.lv-stage:fullscreen .lv-interim { font-size: 22px; }
+.lv-stage:fullscreen .lv-foot { justify-content: center; }
+.lv-stage:fullscreen .lv-kw { flex: 0 1 auto; justify-content: center; }
+.lv-stage:fullscreen .lv-kw .pill { font-size: 16px; }
+.lv-stage::backdrop { background: #08090d; }
 
-/* Fenêtre flottante (Document Picture-in-Picture ou pop-up), en paysage */
-.pip-body.lv-float-body { height: 100vh; min-height: 0; overflow: hidden; }
-.lv-float { box-sizing: border-box; height: 100vh; padding: 10px 14px 10px; }
-.ex-float .lv-stage.lv-fit { height: 100%; gap: 6px; border: 0; padding: 0; background: none; box-shadow: none; }
-.lv-fit .lv-head { min-height: 32px; flex-wrap: nowrap; }
-.lv-fit .lv-status { padding: 2px 10px 2px 8px; }
-.lv-fit .lv-status b { font-size: 14px; }
-.lv-fit .lv-q { -webkit-line-clamp: 1; line-clamp: 1; font-size: 14px; }
-.lv-fit .lv-q .ex-live-en { font-size: 16px; }
+/* Fenêtre flottante (Document Picture-in-Picture ou pop-up), 760 × 420 sous la caméra */
+.pip-body.lv-float-body { height: 100vh; min-height: 0; overflow: hidden; background: #08090d; }
+.lv-float { box-sizing: border-box; height: 100vh; padding: 0; }
+.ex-float .lv-stage.lv-fit {
+  height: 100%; gap: 8px; border: 0; border-radius: 0; padding: 10px 16px 10px; box-shadow: none;
+  background: radial-gradient(110% 80% at 50% -25%, rgba(99, 102, 241, .16) 0%, transparent 60%), #08090d;
+}
+.lv-fit .lv-head { min-height: 30px; flex-wrap: nowrap; }
+.lv-fit .lv-status { height: 28px; }
+.lv-fit .lv-status b { font-size: 13.5px; }
+.lv-fit .lv-q { padding: 7px 12px; gap: 10px; border-radius: 12px; }
+.lv-fit .lv-q-tag { font-size: 10.5px; padding: 2px 7px; }
+.lv-fit .lv-q-en, .lv-fit .lv-interim { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lv-fit .lv-q-fr { font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lv-fit .lv-q-wait { font-size: 13.5px; }
 .lv-fit .lv-a { flex: 1 1 auto; overflow: hidden; display: flex; flex-direction: column; justify-content: safe center; }
-.lv-al { display: block; margin-bottom: 4px; color: var(--accent-text, var(--accent)); }
-.lv-kw { align-items: center; }
-.lv-fit .lv-ans { max-width: none; font-size: 34px; line-height: 1.25; }
-.lv-fit .lv-sub { gap: 4px; }
-.lv-fit .lv-fr { font-size: 15px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; line-clamp: 1; overflow: hidden; }
-.lv-fit .lv-kw { flex-wrap: nowrap; overflow: hidden; gap: 5px; }
-.lv-fit .lv-kw .pill { font-size: 14.5px; white-space: nowrap; }
-/* Fenêtre : expression et traduction sur une seule ligne, pour laisser la place à la réponse */
-.lv-fit .lv-kw .lv-kw-i { display: inline-flex; align-items: baseline; gap: 6px; padding: 3px 10px; border-radius: 10px; white-space: nowrap; }
-.lv-fit .lv-kw-fr { font-size: .92em; }
-.lv-fit .lv-kw-fr::before { content: "·"; margin-right: 6px; color: var(--text-3); }
-.lv-fit .lv-al { display: none; }
+.lv-fit .lv-ans { text-align: center; justify-items: center; gap: .42em; }
+.lv-fit .lv-foot { gap: 8px; min-height: 30px; }
+.lv-fit .lv-foot .lv-status { flex: none; }
+.lv-fit .lv-tr { font-size: max(15px, .64em); }
+.lv-fit .lv-en, .lv-fit .lv-tr, .lv-stage:fullscreen .lv-en, .lv-stage:fullscreen .lv-tr { text-wrap: balance; }
+.lv-fit .lv-kw {
+  flex-wrap: nowrap; overflow: hidden; gap: 5px;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+}
+.lv-fit .lv-kw .pill { font-size: 14px; min-height: 28px; padding: 3px 10px; }
+.lv-fit .lv-ghost.btn { height: 30px; padding: 0 10px; font-size: 13px; }
 .lv-fit .lv-warn, .lv-fit .lv-tip { padding: 4px 10px; font-size: 13px; }
-.lv-fit .lv-err-btns .btn { min-height: 28px; padding: 0 10px; font-size: 13px; }
-.lv-fit .lv-tools { gap: 6px; flex-wrap: nowrap; margin: 0; }
-.lv-fit .lv-head .lv-tools .btn { min-height: 32px; padding: 0 12px; font-size: 14px; }
-.lv-fit .lv-tools .btn { min-height: 30px; padding: 0 10px; font-size: 13px; }
+.lv-fit .lv-err-btns .btn { height: 30px; padding: 0 10px; font-size: 13px; }
 .lv-fit .ex-live-err { padding: 6px 10px; font-size: 13px; }
-.lv-fit .lv-empty { flex: 1 1 auto; align-content: center; text-align: center; }
-.lv-fit .lv-wait { font-size: 20px; }
-.lv-fit .lv-interim { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13.5px; margin: 0; }
+.lv-fit .lv-empty { flex: 1 1 auto; align-content: center; justify-items: center; text-align: center; }
+.lv-fit .lv-empty .lv-tip { justify-content: center; }
+.lv-fit .lv-wait { font-size: 20px; max-width: 30ch; }
 
 /* ---------- 3. Mise en page de l'écran d'appel ---------- */
 
@@ -162,16 +263,18 @@
     flex: 1 1 auto; min-height: 0; max-width: none; width: 100%;
     display: grid; grid-template-columns: minmax(0, 1fr) clamp(360px, 29vw, 440px); gap: 18px;
   }
-  .ex-call .lv-stage { height: 100%; overflow: hidden; padding: 22px 30px 18px; gap: 14px; }
-  /* Réponse en haut, au plus près de la caméra ; traduction et mots-clés en bas. */
-  .ex-call .lv-stage .lv-a { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-start; padding-top: 6px; }
-  .ex-call .lv-stage .lv-ans { max-width: none; line-height: 1.25; }
+  .ex-call .lv-stage { height: 100%; overflow: hidden; padding: 20px 28px 18px; gap: 14px; }
+  /* Question en haut, sous-titres juste dessous (au plus près de la caméra), mots-clés en bas. */
+  .ex-call .lv-stage .lv-a { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-start; padding-top: 4px; }
+  .ex-call .lv-stage .lv-ans { max-width: 40em; }
   .ex-call .lv-stage > .lv-start { margin: auto 0; gap: 14px; }
   .ex-call .lv-stage > .lv-empty { flex: 1 1 auto; align-content: center; justify-items: center; text-align: center; }
+  .ex-call .lv-stage > .lv-empty .lv-wait { max-width: 34ch; }
   .ex-call .lv-stage > .lv-empty .lv-tip { justify-content: center; }
   .ex-call .lv-stage .lv-wait { font-size: 22px; }
-  .ex-call .lv-q .ex-live-en { font-size: 18px; }
-  .ex-call .lv-fr { font-size: 16.5px; }
+  .ex-call .lv-q { padding: 12px 16px; }
+  .ex-call .lv-q-en, .ex-call .lv-interim { font-size: 18.5px; }
+  .ex-call .lv-q-fr { font-size: 16px; }
   .ex-call .lv-kw .pill { font-size: 15px; }
   .ex-call .lv-start-t { font-size: 26px; }
   .ex-call .lv-start-p { font-size: 17px; }
@@ -186,13 +289,23 @@
 @media (max-width: 559px) {
   .ex-call .lv-stage { padding: 14px 14px 12px; margin-bottom: 14px; }
   .lv-go { width: 100%; justify-content: center; }
+  .lv-head .lv-vtools { width: 100%; }
   .lv-tools .btn { flex: 1 1 auto; justify-content: center; }
+  .lv-foot { flex-wrap: wrap; }
+  .lv-foot .lv-atools { width: 100%; margin-left: 0; }
+  .lv-q { padding: 9px 12px; gap: 10px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lv-status .ex-live-dot.on { animation: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--err) 30%, transparent); }
-  .lv-ans.is-streaming::after { animation: none; }
+  .lv-status .ex-live-dot, .lv-status.on .ex-live-dot, .lv-status[data-k] .ex-live-dot { animation: none !important; box-shadow: 0 0 0 3px rgba(255, 255, 255, .14); }
+  .lv-line.is-new { animation: none; }
+  .lv-interim::after, .lv-ans.is-streaming .lv-line:last-child .lv-en::after, .lv-ans.is-streaming .lv-line:last-child .lv-tr::after { animation: none !important; }
+  .lv-ans.is-streaming:empty::before, .lv-ans.is-streaming:empty::after { animation: none; }
+  .lv-a, .lv-foot, .lv-status { transition: none; }
+  .lv-a.is-scroll { scroll-behavior: auto; }
 }
 @media (forced-colors: active) {
-  .lv-status, .lv-stage .ex-live-err { border: 1px solid CanvasText; }
+  .lv-stage { border: 1px solid CanvasText; }
+  .lv-status, .lv-stage .ex-live-err, .lv-q, .lv-kw .pill { border: 1px solid CanvasText; }
+  .lv-tr, .lv-q-fr, .lv-kw-fr { color: GrayText; }
 }

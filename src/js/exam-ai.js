@@ -792,19 +792,62 @@
     return out.slice(0, 5);
   }
 
+  // Sortie « sous-titres » de l'aide en direct, pensée pour le flux :
+  //   Q-FR: traduction de la question du jury
+  //   EN: phrase 1        FR: sa traduction
+  //   EN: phrase 2        FR: sa traduction …
+  //   Keywords: expression (traduction); …
+  // Tolère le gras, les puces, « English: / French: », une paire sur une seule ligne,
+  // une étiquette encore incomplète en fin de flux, et l'ancien format (texte brut).
+  const LV_TAG = /^(?:[-•*>#]+\s*|\d+[.)]\s*)?(q\s*[-_]?\s*fr|question\s*\(?\s*fr\s*\)?|en|english|anglais|fr|french|fran[cç]ais|traduction)\s*[:：]\s*/i;
+  const LV_PARTIAL = ['qfr:', 'questionfr:', 'en:', 'english:', 'fr:', 'french:', 'keywords:', 'keyword:'];
+  function sentencesOf(t) {
+    return String(t || '').split(/(?<=[.!?…])\s+(?=["“«(]?[A-Z0-9])/).map(x => x.trim()).filter(Boolean);
+  }
   function splitLive(full) {
-    let s = String(full || '').replace(/\r/g, '');
+    let s = String(full || '').replace(/\r/g, '').replace(/\*\*|__|`+/g, '');
     let kw = '';
     const m = s.match(KW_LINE);
     if (m) {
       kw = s.slice(m.index + m[0].length);
       s = s.slice(0, m.index);
     } else {
+      // Étiquette encore incomplète en fin de flux (« Keyw », « E », « FR: ») : masquée.
       const nl = s.lastIndexOf('\n');
-      const tail = nl < 0 ? '' : s.slice(nl + 1).replace(/[\s*_#>-]/g, '').toLowerCase();
-      if (tail && 'keywords'.indexOf(tail) === 0) s = s.slice(0, nl);
+      const tail = s.slice(nl + 1).replace(/[\s*_#>•-]/g, '').toLowerCase();
+      if (tail && LV_PARTIAL.some(p => p.indexOf(tail) === 0)) s = s.slice(0, Math.max(0, nl));
     }
-    return { text: cleanSpoken(s), keyWords: kwList(kw) };
+    // Paire écrite sur une seule ligne : « EN: … FR: … ».
+    s = s.replace(/[ \t]+(?=(?:EN|FR|Q-FR)[ \t]*:)/g, '\n');
+    let qFr = '';
+    let cur = null;
+    let field = '';
+    const pairs = [];
+    const loose = [];
+    s.split('\n').forEach((raw) => {
+      const line = raw.trim();
+      if (!line) return;
+      const t = line.match(LV_TAG);
+      if (t) {
+        const tag = t[1].toLowerCase().replace(/[\s_()-]/g, '');
+        const rest = line.slice(t[0].length).trim();
+        if (/^q/.test(tag)) { qFr = rest; field = ''; return; }
+        if (/^(?:en|english|anglais)$/.test(tag)) { cur = { en: rest, fr: '' }; pairs.push(cur); field = 'en'; return; }
+        if (!cur || cur.fr) { cur = { en: '', fr: '' }; pairs.push(cur); }
+        cur.fr = rest; field = 'fr';
+        return;
+      }
+      if (cur && field) cur[field] += ' ' + line;
+      else loose.push(line);
+    });
+    let lines;
+    if (pairs.length) {
+      lines = pairs.map(p => ({ en: cleanSpoken(p.en), fr: cleanSpoken(p.fr) })).filter(p => p.en);
+    } else {
+      lines = sentencesOf(cleanSpoken(loose.join('\n'))).map(en => ({ en, fr: '' }));
+    }
+    const text = pairs.length ? lines.map(l => l.en).join(' ') : cleanSpoken(loose.join('\n'));
+    return { text, keyWords: kwList(kw), qFr: cleanSpoken(qFr), lines };
   }
 
   async function liveAnswer(opts) {
@@ -814,17 +857,24 @@
     // Contexte réduit : la 1re réponse doit arriver en 1 à 2 s pendant l'appel.
     const expose = clipMiddle(transcriptText(o.expose), 1200, 600);
     const turns = interviewText((Array.isArray(o.turns) ? o.turns : []).slice(-6), 1200);
-    const size = o.shorter ? '2 short sentences, 40 words maximum' : '3-5 short sentences, 90 words maximum';
+    const size = o.shorter ? '2 short sentences, 40 words maximum' : '3-5 short sentences, 75 words maximum';
     const system = [
       'You are the candidate\'s English coach during a TRAINING mock oral for the French accounting diploma (DSCG UE6 / DSGC UE 218, business English, CEFR level B2 expected). The candidate has studied a press article and an exam question, has given a presentation, and is now questioned by the jury.',
-      'Write what the candidate can say right now to the jury: spoken English, in the first person, natural, B2-C1 level, ' + size + '.',
+      'Write what the candidate can say right now to the jury: spoken English, in the first person, natural, B2 level, easy to read aloud, ' + size + ' in English. Each sentence 20 words maximum.',
       o.shorter
         ? 'Give the direct answer, then one short reason or example.'
         : 'Give the direct answer first, then one argument and one concrete example taken from the article or from 2025-2026 business news. Use simple linking words (first, because, for example, however, so).',
-      'No markdown, no list, no quotes, no preamble: only the words to say.',
+      'The candidate reads your answer as bilingual subtitles (English, then French). Use EXACTLY this plain-text format, one item per line, no markdown, no quotes, no preamble:',
+      'Q-FR: natural French translation of the jury\'s words',
+      'EN: first sentence to say',
+      'FR: its French translation',
+      'EN: next sentence to say',
+      'FR: its French translation',
+      '(one EN line then one FR line for each sentence)',
+      'Keywords: expression (traduction française); expression (traduction française); expression (traduction française)',
+      'The last line gives 3-5 useful English expressions from the answer, each followed by its short French translation in brackets.',
       'The jury\'s words come from automatic speech recognition: if some words are wrong or missing, answer the most likely intended question.',
-      'If the jury\'s words are not a question or a request addressed to the candidate (greeting, sound check, thanks, instructions, small talk), output exactly "—" and nothing else.',
-      'After the answer, you may add one last line: "Keywords: expression (traduction française); expression (traduction française); expression (traduction française)" (3-5 useful English expressions for this answer, each followed by its short French translation in brackets).',
+      'If the jury\'s words are not a question or a request addressed to the candidate (greeting, sound check, thanks, instructions, small talk), output exactly "—" and nothing else (no Q-FR line).',
       'Usable recent news (2025-2026), only if relevant: ' + NEWS.join(' ')
     ].join('\n');
     const prompt = [
@@ -833,24 +883,27 @@
       turns ? 'RECENT EXCHANGE (automatic transcript, may contain errors):\n' + turns : '',
       'JURY\'S WORDS JUST NOW (automatic transcript, may contain errors): ' + question,
       '',
-      'Write the candidate\'s answer now (' + size + ').'
+      'Write the candidate\'s answer now (' + size + '), as Q-FR / EN / FR subtitle lines.'
     ].filter(Boolean).join('\n');
+    // Flux : onDelta(texte anglais, { lines: [{ en, fr }], qFr }) à chaque nouveau morceau utile.
     let shown = '';
     const onDelta = (full) => {
       if (typeof o.onDelta !== 'function' || (o.signal && o.signal.aborted)) return;
-      const t = splitLive(full).text;
-      if (!t || isSkip(t)) return;
+      const p = splitLive(full);
+      const t = p.text;
+      if ((t && isSkip(t)) || (!t && !p.qFr)) return;
       const out = t.replace(/^[—–]\s*/, '');
-      if (!out || out === shown) return;
-      shown = out;
-      try { o.onDelta(out); } catch (e) {  }
+      const key = out + '\u0001' + p.qFr + '\u0001' + p.lines.map(l => l.fr).join('\u0002');
+      if (key === shown) return;
+      shown = key;
+      try { o.onDelta(out, { lines: p.lines, qFr: p.qFr }); } catch (e) {  }
     };
-    const r = await call({ purpose: 'live', stream: true, onDelta, system, prompt, temperature: 0.5, maxTokens: 400, timeoutMs: 15000, budgetMs: 30000, signal: o.signal });
+    const r = await call({ purpose: 'live', stream: true, onDelta, system, prompt, temperature: 0.5, maxTokens: 800, timeoutMs: 15000, budgetMs: 30000, signal: o.signal });
     const parts = splitLive(r.text);
     if (parts.text && isSkip(parts.text)) return { text: '', keyWords: [], skip: true };
     const text = parts.text.replace(/^[—–]\s*/, '');
     if (!text) throw err('EMPTY', 'Réponse vide de l’IA — réessayez.');
-    return { text, keyWords: parts.keyWords, skip: false };
+    return { text, keyWords: parts.keyWords, skip: false, qFr: parts.qFr, lines: parts.lines };
   }
 
   async function juryAnswer(opts) {

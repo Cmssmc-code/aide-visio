@@ -50,12 +50,29 @@ function examFakes() {
     M.calls.push(Object.assign({ fn, kind: o.kind, at: Date.now() },
       'question' in o ? { question: o.question, shorter: !!o.shorter, expose: String(o.expose || ''), turns: (o.turns || []).length, subject: o.subject && o.subject.id } : {}, extra));
   };
+  // Fausse IA du direct : sous-titres bilingues (paires EN / FR) envoyés en flux, en 3 morceaux.
   const LIVE = [
-    [/long run/i, 'In the long run, I believe tariffs do more harm than good. First, importers usually pass the extra cost on to consumers, so households lose purchasing power. Second, firms with global supply chains face higher costs and greater uncertainty, which delays investment. For example, after the 2025 US tariffs, several carmakers postponed new factories. However, some domestic producers may gain market share in the short term. So overall, I would say the costs outweigh the benefits.'],
-    [/europe/i,'European exporters would be hit too, so the EU could answer with its own tariffs on American goods.'],
-    [/tariff/i, 'I think the new tariffs will raise prices for consumers and disrupt the supply chain of many firms.'],
-    [/.*/, 'In my view, the article raises a key question for companies and for consumers.']
+    [/long run/i, [
+      ['In the long run, I believe tariffs do more harm than good.', 'À long terme, je pense que les droits de douane font plus de mal que de bien.'],
+      ['First, importers usually pass the extra cost on to consumers, so households lose purchasing power.', 'D’abord, les importateurs répercutent en général le surcoût sur les consommateurs : les ménages perdent du pouvoir d’achat.'],
+      ['Second, firms with global supply chains face higher costs and greater uncertainty, which delays investment.', 'Ensuite, les entreprises aux chaînes d’approvisionnement mondiales subissent plus de coûts et d’incertitude, ce qui retarde l’investissement.'],
+      ['For example, after the 2025 US tariffs, several carmakers postponed new factories.', 'Par exemple, après les droits de douane américains de 2025, plusieurs constructeurs ont reporté de nouvelles usines.'],
+      ['However, some domestic producers may gain market share in the short term.', 'Cependant, certains producteurs nationaux peuvent gagner des parts de marché à court terme.'],
+      ['So overall, I would say the costs outweigh the benefits.', 'Donc, globalement, je dirais que les coûts l’emportent sur les avantages.']
+    ]],
+    [/europe/i, [['European exporters would be hit too, so the EU could answer with its own tariffs on American goods.', 'Les exportateurs européens seraient touchés aussi : l’UE pourrait répondre par ses propres droits de douane sur les produits américains.']]],
+    [/tariff/i, [
+      ['I think the new tariffs will raise prices for consumers and disrupt the supply chain of many firms.', 'Je pense que les nouveaux droits de douane vont faire monter les prix et perturber la chaîne d’approvisionnement de nombreuses entreprises.'],
+      ['Importers usually pass the extra cost on to shoppers.', 'Les importateurs répercutent généralement le surcoût sur les clients.'],
+      ['For example, after the 2025 US tariffs, many retailers raised their prices.', 'Par exemple, après les droits de douane américains de 2025, beaucoup de distributeurs ont augmenté leurs prix.']
+    ]],
+    [/.*/, [['In my view, the article raises a key question for companies and for consumers.', 'À mon avis, l’article soulève une question clé pour les entreprises et les consommateurs.']]]
   ];
+  const Q_FR = {
+    'What do you think about the new tariffs?': 'Que pensez-vous des nouveaux droits de douane ?',
+    'What will happen in the long run for European and American consumers, in your opinion?': 'Selon vous, que va-t-il se passer à long terme pour les consommateurs européens et américains ?'
+  };
+  M.qFr = Q_FR;
   const examAI = {
     ready: () => M.aiReady,
     isJuryQuestion: (t) => /\?\s*$/.test(String(t || '').trim()) || /^\s*(what|why|how|could|can|do|tell)\b/i.test(String(t || '')),
@@ -65,13 +82,25 @@ function examFakes() {
         if (!M.aiReady) { await wait(M.delay / 2, a.signal); throw Object.assign(new Error('Pas de clé IA.'), { code: 'NO_KEY' }); }
         if (M.liveError) { await wait(M.delay / 2, a.signal); throw Object.assign(new Error(M.liveError.msg), { code: M.liveError.code }); }
         if (/hear me/i.test(a.question)) { await wait(M.delay, a.signal); return { text: '', keyWords: [], skip: true }; }
-        const full = a.shorter ? 'Tariffs mean higher prices and a weaker supply chain.' : LIVE.find(([re]) => re.test(a.question))[1];
-        const words = full.split(' ');
+        const kw = ['tariffs (droits de douane)', 'supply chain (chaîne d’approvisionnement)'];
+        if (a.shorter) {
+          // Ancien format (texte seul, sans paires) : l'appli le découpe en phrases.
+          const full = 'Tariffs mean higher prices and a weaker supply chain.';
+          const words = full.split(' ');
+          for (const k of [1, 2, 3]) {
+            await wait(M.delay, a.signal);
+            if (a.onDelta) a.onDelta(words.slice(0, Math.ceil(words.length * k / 3)).join(' '));
+          }
+          return { text: full, keyWords: kw, skip: false };
+        }
+        const pairs = LIVE.find(([re]) => re.test(a.question))[1].map(([en, fr]) => ({ en, fr }));
         for (const k of [1, 2, 3]) {
           await wait(M.delay, a.signal);
-          if (a.onDelta) a.onDelta(words.slice(0, Math.ceil(words.length * k / 3)).join(' '));
+          const n = Math.ceil(pairs.length * k / 3);
+          const lines = pairs.slice(0, n).map((l, i) => (k < 3 && i === n - 1 ? { en: l.en, fr: '' } : l));
+          if (a.onDelta) a.onDelta(lines.map((l) => l.en).join(' '), { lines, qFr: '' });
         }
-        return { text: full, keyWords: ['tariffs (droits de douane)', 'supply chain (chaîne d’approvisionnement)'], skip: false };
+        return { text: pairs.map((l) => l.en).join(' '), lines: pairs, qFr: '', keyWords: kw, skip: false };
       } catch (e) {
         if (e && e.name === 'AbortError') M.liveAborted = (M.liveAborted || 0) + 1;
         throw e;
@@ -119,7 +148,7 @@ function examFakes() {
         message: 'Bravo Audrey, très bon oral blanc : 13,5/20. Continue !'
       };
     },
-    async translate(t, o) { log('translate', null, { text: t, to: o && o.to }); return 'FR: ' + t; },
+    async translate(t, o) { log('translate', null, { text: t, to: o && o.to }); return Q_FR[t] || 'FR: ' + t; },
     async generateSubject() { throw new Error('non utilisé'); },
     async subjectFromText() { return null; }
   };
@@ -838,6 +867,7 @@ let callId = '';
     assert((await cp.evaluate(() => window.__examFakes.audio.preset)) === 'pc-interne', 'son de l’appel sur ce PC');
     await emit(cp, 'interim', { who: 'them', text: 'What do you think' });
     await cp.waitForFunction(() => /What do you think/.test(document.querySelector('[data-b="live"] [data-b="interim"]').textContent));
+    assert(/Le jury parle/.test(await liveText(cp, '.lv-status')) && await cp.$('[data-b="live"].has-interim .lv-interim:visible'), 'état « Le jury parle… » et phrase entendue en direct');
     await emit(cp, 'final', { who: 'them', text: Q1 });
     await cp.waitForFunction(() => { const e = document.querySelector('[data-b="live"] [data-b="ans"]'); return e && e.classList.contains('is-streaming') && e.textContent.trim().length > 0; }, null, { timeout: 5000 });
     const partial = await liveText(cp, '[data-b="ans"]');
@@ -845,7 +875,9 @@ let callId = '';
     const ans = await liveText(cp, '[data-b="ans"]');
     assert(/raise prices/.test(ans) && ans.length > partial.length, `réponse complète après le flux (« ${partial} » → « ${ans} »)`);
     assert((await liveText(cp, '.ex-live-en')) === Q1, 'question du jury affichée');
-    assert((await liveText(cp, '[data-b="fr"]')) === 'FR: ' + Q1, 'traduction française');
+    assert((await liveText(cp, '[data-b="fr"]')) === 'Que pensez-vous des nouveaux droits de douane ?', 'traduction française de la question');
+    const sub = await cp.$$eval('[data-b="live"] [data-b="ans"] .lv-line', (p) => p.map((x) => [x.querySelector('.lv-en').textContent, x.querySelector('.lv-tr').textContent]));
+    assert(sub.length === 3 && /raise prices/.test(sub[0][0]) && /faire monter les prix/.test(sub[0][1]) && sub.every(([en, fr]) => en && fr), 'sous-titres : chaque phrase anglaise suivie de sa traduction : ' + JSON.stringify(sub));
     const kw = await cp.$$eval('[data-b="live"] .ex-live-kw .pill', (p) => p.map((x) => [x.querySelector('b').textContent, (x.querySelector('.lv-kw-fr') || {}).textContent]));
     assert(JSON.stringify(kw) === '[["tariffs","droits de douane"],["supply chain","chaîne d’approvisionnement"]]', 'mots clés + traduction : ' + JSON.stringify(kw));
     const la = await callsOf(cp, 'liveAnswer');
@@ -860,6 +892,7 @@ let callId = '';
     await floatPop.waitForSelector('.ex-float [data-b="ans"]', { timeout: 5000 });
     assert(/raise prices/.test(await floatPop.textContent('.ex-float [data-b="ans"]')) && (await floatPop.textContent('.ex-float .ex-live-en')).trim() === Q1, 'réponse dans la fenêtre flottante');
     assert(await cp.$('[data-b="live"] [data-act="float"].on'), 'bouton « Fenêtre flottante » actif');
+    assert(/Réponse prête/.test(await liveText(cp, '.lv-status')), 'état « Réponse prête »');
     await shot(cp, '41-appel-reponse', { full: true });
   });
 
@@ -1063,10 +1096,10 @@ let callId = '';
     assert((await pop.textContent('.lv-float .ex-live-en')).trim() === Q, 'question dans la fenêtre flottante');
     const sizes = await pop.evaluate(() => {
       const px = (sel) => parseFloat(getComputedStyle(document.querySelector(sel)).fontSize);
-      return { ans: px('[data-b="ans"]'), q: px('.ex-live-en'), fr: px('.lv-fr') };
+      return { ans: px('[data-b="ans"]'), q: px('.ex-live-en'), fr: px('.lv-q-fr'), tr: px('.lv-tr') };
     });
-    assert(sizes.ans >= 1.6 * sizes.q && sizes.ans > sizes.fr, 'réponse nettement plus grande : ' + JSON.stringify(sizes));
-    assert(sizes.q >= 15 && sizes.fr >= 14, 'question et traduction lisibles à 60-70 cm : ' + JSON.stringify(sizes));
+    assert(sizes.ans >= 1.6 * sizes.q && sizes.ans > sizes.fr && sizes.ans > 1.4 * sizes.tr, 'réponse anglaise nettement plus grande : ' + JSON.stringify(sizes));
+    assert(sizes.q >= 15 && sizes.fr >= 14 && sizes.tr >= 14, 'question et traductions lisibles à 60-70 cm : ' + JSON.stringify(sizes));
     assert((await ep.evaluate(() => document.scrollingElement.scrollHeight - innerHeight)) <= 1, '1536×830 : réponse affichée sans défilement');
     assert(await pop.evaluate(() => { const a = document.querySelector('.lv-a'); return a.scrollHeight <= a.clientHeight + 1; }), 'réponse entière visible dans la fenêtre');
     assert(await pop.evaluate(() => [...document.styleSheets].some((x) => { try { return [...x.cssRules].some((r) => /lv-fit/.test(r.cssText)); } catch (e) { return false; } })), 'live.css copié dans la fenêtre flottante');
@@ -1146,14 +1179,27 @@ let callId = '';
     await pop.setViewportSize({ width: 760, height: 420 });
     await pop.waitForSelector('.lv-float .lv-status.on');
     assert(/J’écoute/.test(await pop.textContent('.lv-float .lv-status')) && /sous la caméra/.test(await pop.textContent('.lv-float')), 'fenêtre : « J’écoute… » et conseil de placement');
-    // Longue réponse : ajustée sans coupure dans la page et dans la fenêtre.
+    // Le jury parle : phrase entendue en direct, état clair.
+    await emit(ep, 'interim', { who: 'mixed', text: 'What will happen in the long run for European' });
+    await pop.waitForSelector('.lv-float .lv-stage.has-interim .lv-interim');
+    assert(/Le jury parle/.test(await pop.textContent('.lv-float .lv-status')), 'fenêtre : « Le jury parle… »');
+    await sleep(150);
+    await pop.screenshot({ path: path.join(SHOTS, '59-teams-flottante-jury-parle.png') });
+    // Longue réponse : affichée en flux, puis ajustée sans coupure dans la page et dans la fenêtre.
+    await ep.evaluate(() => { window.__examFakes.delay = 700; });
     await emit(ep, 'final', { who: 'mixed', text: 'What will happen in the long run for European and American consumers, in your opinion?' });
+    await pop.waitForFunction(() => document.querySelectorAll('.lv-float .lv-ans.is-streaming .lv-line').length >= 4, null, { timeout: 5000 });
+    assert(/Réponse en cours/.test(await pop.textContent('.lv-float .lv-status')), 'fenêtre : « Réponse en cours… »');
+    await sleep(350);
+    await pop.screenshot({ path: path.join(SHOTS, '60-teams-flottante-flux.png') });
+    await ep.evaluate(() => { window.__examFakes.delay = 60; });
     await pop.waitForSelector('.lv-float .ex-live-kw .pill', { timeout: 5000 });
     await sleep(200);
-    const fit = async (p, sel) => p.evaluate((s) => { const a = document.querySelector(s + ' .lv-a'); const t = document.querySelector(s + ' [data-b="ans"]'); return { fits: a.scrollHeight <= a.clientHeight + 1, px: parseFloat(getComputedStyle(t).fontSize), kw: [...document.querySelectorAll(s + ' .lv-kw-fr')].map((x) => x.textContent) }; }, sel);
+    const fit = async (p, sel) => p.evaluate((s) => { const a = document.querySelector(s + ' .lv-a'); const t = document.querySelector(s + ' [data-b="ans"]'); return { fits: a.scrollHeight <= a.clientHeight + 1, scroll: a.classList.contains('is-scroll') && getComputedStyle(a).overflowY === 'auto', px: parseFloat(getComputedStyle(t).fontSize), lines: t.querySelectorAll('.lv-line').length, kw: [...document.querySelectorAll(s + ' .lv-kw-fr')].map((x) => x.textContent) }; }, sel);
     const fp = await fit(pop, '.lv-float'), pg = await fit(ep, '[data-b="live"]');
-    assert(fp.fits && fp.px >= 24, 'fenêtre 760×420 : longue réponse entière et lisible : ' + JSON.stringify(fp));
-    assert(pg.fits && pg.px >= 28, 'page : longue réponse entière : ' + JSON.stringify(pg));
+    // 6 phrases + traductions (plus long que la consigne) : taille mini lisible, puis défilement doux, rien de coupé.
+    assert(fp.lines === 6 && fp.px >= 22 && (fp.fits || fp.scroll), 'fenêtre 760×420 : longue réponse lisible, entière ou défilante : ' + JSON.stringify(fp));
+    assert(pg.lines === 6 && pg.px >= 24 && (pg.fits || pg.scroll), 'page : longue réponse lisible, entière ou défilante : ' + JSON.stringify(pg));
     assert(fp.kw.length === 2 && fp.kw[0] === 'droits de douane', 'traduction des mots-clés dans la fenêtre : ' + JSON.stringify(fp.kw));
     const btns = await pop.evaluate(() => ['shorter', 'retry'].map((a) => { const b = document.querySelector(`.lv-float [data-act="${a}"]`); if (!b) return null; const r = b.getBoundingClientRect(); return r.width >= 60 && r.height >= 30 && r.bottom <= innerHeight && r.right <= innerWidth; }));
     assert(btns.every(Boolean), 'Plus court / Réessayer visibles et cliquables dans la fenêtre : ' + JSON.stringify(btns));

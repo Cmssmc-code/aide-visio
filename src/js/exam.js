@@ -2829,7 +2829,7 @@
   function renderCall(root, s) {
     const C = baseController(root, s);
     const call = s.call;
-    const R = { ctrl: null, req: null, item: null, busy: false, partial: '', float: null, jury: [], err: '', errKind: '', warn: '' };
+    const R = { ctrl: null, req: null, item: null, busy: false, partial: '', lines: [], float: null, jury: [], err: '', errKind: '', warn: '' };
     const L = createListen(C, {
       call: true, prefKey: 'callListenPreset',
       roleOf: (who, split) => (split ? (who === 'me' ? 'student' : 'jury') : 'mixed'),
@@ -2850,7 +2850,7 @@
     root.innerHTML = `<div class="screen ex ex-call">
       ${topbar({ title: 'Entraînement sur Teams', sub: s.subject.title, back: '#/' })}
       <div class="lv-body">
-        <section class="card ex-live lv-stage" data-b="live" aria-live="polite"></section>
+        <section class="card ex-live lv-stage" data-b="live" data-theme="dark" aria-live="polite"></section>
         <aside class="lv-side" aria-label="Appel, son, sujet et historique">
           <section class="card card-pad ex-call-meet">
             <div class="card-head"><h2 class="h3">Rejoindre l’appel</h2></div>
@@ -2898,111 +2898,186 @@
     function warnHTML() {
       return R.warn && L.A.on ? `<p class="lv-warn" role="status">${icon('info', 'ico-inline')}<span>${esc(R.warn)}</span></p>` : '';
     }
-    function statusHTML(busy) {
-      const on = L.A.on;
-      const label = L.A.starting ? 'Démarrage…' : on ? 'J’écoute…' : 'Assistant arrêté';
-      return `<span class="lv-status${on ? ' on' : ''}"><span class="ex-live-dot${on ? ' on' : ''}" aria-hidden="true"></span><b>${label}</b></span>${busy ? '<span class="pill pill-xs pill-accent">Réponse en cours…</span>' : ''}`;
+    // ---- Sous-titres bilingues : question du jury, réponse phrase par phrase (EN puis FR), mots-clés ----
+    function statusInfo(busy, a) {
+      if (L.A.starting) return ['Démarrage…', 'start'];
+      if (!L.A.on) return ['Assistant arrêté', 'off'];
+      if (L.A.interim) return ['Le jury parle…', 'talk'];
+      if (busy) return ['Réponse en cours…', 'busy'];
+      if (a && a.text && !a.error) return ['Réponse prête', 'ready'];
+      return ['J’écoute…', 'listen'];
     }
-    // Mot-clé « expression (traduction) » → expression en gras, traduction en dessous.
+    function statusHTML(busy, a) {
+      const [label, k] = statusInfo(busy, a);
+      return `<span class="lv-status${L.A.on ? ' on' : ''}" data-k="${k}" data-b="status" role="status"><span class="ex-live-dot${L.A.on ? ' on' : ''}" aria-hidden="true"></span><b data-b="status-l">${label}</b></span>`;
+    }
+    // Mot-clé « expression (traduction) » → expression anglaise · traduction française.
     function kwHTML(k) {
       const m = str(k).match(/^(.+?)\s*\(([^()]+)\)\s*$/);
       return m ? `<span class="pill lv-kw-i"><b lang="en">${esc(m[1])}</b><span class="lv-kw-fr" lang="fr">${esc(m[2])}</span></span>` : `<span class="pill lv-kw-i"><b lang="en">${esc(k)}</b></span>`;
     }
-    function toolsHTML(float, a) {
-      const t = [];
-      if (a) {
-        t.push(`<button type="button" class="btn btn-sm" data-act="shorter" title="Réponse plus courte">${icon('text-size')}<span>Plus court</span></button>`);
-        t.push(`<button type="button" class="btn btn-sm" data-act="retry" title="Nouvelle réponse">${icon('refresh')}<span>Réessayer</span></button>`);
-      }
-      if (!float && L.A.on) {
-        t.push(`<button type="button" class="btn btn-sm${R.float ? ' on' : ''}" data-act="float" aria-pressed="${!!R.float}" title="Garder la réponse au premier plan, au-dessus de Teams">${icon('pip')}<span>Fenêtre flottante</span></button>`);
-        if (canFull()) t.push(`<button type="button" class="btn btn-sm${isFull() ? ' on' : ''}" data-act="full" aria-pressed="${isFull()}" title="Réponse en plein écran (Échap pour sortir)">${icon('eye')}<span>${isFull() ? 'Quitter le plein écran' : 'Plein écran'}</span></button>`);
-        t.push(`<button type="button" class="btn btn-sm" data-act="listen-stop">${icon('stop')}<span>Arrêter</span></button>`);
-      }
-      return t.length ? `<div class="ex-live-actions lv-tools">${t.join('')}</div>` : '';
+    const sentencesOf = (t) => str(t).split(/(?<=[.!?…])\s+(?=["“«(]?[A-Z0-9])/).map((x) => x.trim()).filter(Boolean);
+    // Phrases à afficher : paires EN / FR de l'IA ; sinon (ancienne IA) la réponse découpée en phrases.
+    function linesFor(a, busy) {
+      const l = arr(busy ? R.lines : a.lines).filter((x) => x && str(x.en).trim());
+      if (l.length) return l;
+      return sentencesOf(busy ? R.partial : a.text).map((en) => ({ en, fr: '' }));
+    }
+    const lineHTML = (l, isNew) => `<p class="lv-line${isNew ? ' is-new' : ''}"><span class="lv-en" lang="en">${esc(l.en)}</span><span class="lv-tr" lang="fr">${esc(str(l.fr))}</span></p>`;
+    // Outils de la réponse (discrets) et de la vue (fenêtre flottante, plein écran, arrêt).
+    function answerTools() {
+      return `<div class="ex-live-actions lv-tools lv-atools">
+        <button type="button" class="btn btn-sm lv-ghost" data-act="shorter" title="Réponse plus courte (2 phrases)">${icon('text-size')}<span>Plus court</span></button>
+        <button type="button" class="btn btn-sm lv-ghost" data-act="retry" title="Nouvelle réponse">${icon('refresh')}<span>Réessayer</span></button>
+      </div>`;
+    }
+    function viewTools() {
+      if (!L.A.on) return '';
+      const t = [`<button type="button" class="btn btn-sm lv-ghost${R.float ? ' on' : ''}" data-act="float" aria-pressed="${!!R.float}" title="Garder les sous-titres au premier plan, au-dessus de Teams">${icon('pip')}<span>Fenêtre flottante</span></button>`];
+      if (canFull()) t.push(`<button type="button" class="btn btn-sm lv-ghost${isFull() ? ' on' : ''}" data-act="full" aria-pressed="${isFull()}" title="Sous-titres en plein écran (Échap pour sortir)">${icon('eye')}<span>${isFull() ? 'Quitter le plein écran' : 'Plein écran'}</span></button>`);
+      t.push(`<button type="button" class="btn btn-sm lv-ghost" data-act="listen-stop" title="Arrêter l’écoute">${icon('stop')}<span>Arrêter</span></button>`);
+      return `<div class="ex-live-actions lv-tools lv-vtools">${t.join('')}</div>`;
+    }
+    // Bloc « Jury » : question entendue (EN) + traduction (FR). Pendant que le jury parle,
+    // la phrase entendue s'y affiche en direct à la place de la question précédente.
+    function juryHTML(a) {
+      const fr = a ? str(a.fr) : '';
+      return `<div class="${a ? 'ex-live-q lv-q' : 'lv-q lv-q-live'}">
+        <span class="lv-q-tag" aria-hidden="true">Jury</span>
+        <div class="lv-q-body">
+          ${a ? `<p class="lv-q-en ex-live-en" lang="en">${esc(a.question)}</p>
+          <p class="lv-q-fr" lang="fr"${fr ? '' : ' hidden'}><span class="ex-live-fr" data-b="fr">${esc(fr)}</span></p>` : ''}
+          <p class="lv-interim ex-live-interim" data-b="interim" lang="en">${esc(L.A.interim)}</p>
+          <p class="lv-q-wait" lang="fr">Traduction dès la fin de la question…</p>
+        </div>
+      </div>`;
     }
     function liveHTML(float) {
       const a = shown();
       const busy = R.busy && R.item === a;
-      const interim = `<p class="ex-live-interim lv-interim" data-b="interim" lang="en">${esc(L.A.interim)}</p>`;
       const listenErr = !L.A.on && !L.A.starting && L.A.state === 'error' && L.A.error ? errHTML(L.A.error, listenKind(L.A.errorCode), float) : '';
       const startErr = R.err ? errHTML(R.err, R.errKind, float) : '';
       if (!aiHas('liveAnswer')) return `<div class="lv-empty">${errHTML(OLD_AI, '', float)}</div>`;
       if (!L.A.on && !L.A.starting && !a) {
         return `<div class="lv-start">
           <span class="lv-start-ic" aria-hidden="true">${icon('waveform')}</span>
-          <h2 class="lv-start-t">Assistant en direct</h2>
-          <p class="lv-start-p">Il écoute la question du jury et affiche une réponse en anglais à lire en regardant la caméra.</p>
+          <h2 class="lv-start-t">Sous-titres en direct</h2>
+          <p class="lv-start-p">L’assistant écoute le jury et affiche la question et une réponse à dire, phrase par phrase : <b lang="en">en anglais</b>, avec le français juste dessous.</p>
           <button type="button" class="btn btn-primary btn-lg lv-go" data-act="assist">${icon('mic')}<span>Lancer l’assistant</span></button>
           ${startErr || listenErr}
           <p class="lv-tip">${icon('video', 'ico-inline')}<span>${desk ? 'Placez la fenêtre flottante juste sous la caméra.' : 'Posez le téléphone juste sous la caméra.'}</span></p>
         </div>`;
       }
-      const head = `<div class="ex-live-head lv-head">${statusHTML(busy)}<span class="spacer"></span>${!float && isFull() ? `<span class="lv-esc">Échap pour sortir du plein écran</span>` : ''}${!L.A.on && !L.A.starting && !float ? `<button type="button" class="btn btn-primary btn-sm" data-act="assist">${icon('mic')}<span>Relancer l’assistant</span></button>` : ''}</div>${warnHTML()}`;
+      const relaunch = !L.A.on && !L.A.starting && !float ? `<button type="button" class="btn btn-primary btn-sm" data-act="assist">${icon('mic')}<span>Relancer l’assistant</span></button>` : '';
+      const head = `<div class="ex-live-head lv-head">${statusHTML(busy, a)}<span class="spacer"></span>${!float && isFull() ? `<span class="lv-esc">Échap pour sortir du plein écran</span>` : ''}${float ? '' : viewTools()}${relaunch}</div>${warnHTML()}`;
       if (!a) {
-        return `${head}<div class="lv-empty">
-          <p class="ex-live-empty lv-wait">${float ? 'La réponse s’affichera ici dès que le jury pose une question.' : 'Dès que le jury pose une question, la réponse s’affiche ici, en grand.'}</p>
-          ${float || R.float ? `<p class="lv-tip">${icon('video', 'ico-inline')}<span>${float ? 'Glissez cette fenêtre juste sous la caméra.' : 'Fenêtre flottante ouverte : placez-la juste sous la caméra.'}</span></p>` : ''}
-        </div>${startErr || listenErr}${toolsHTML(float, null)}${interim}`;
+        return `${head}
+          ${juryHTML(null)}
+          <div class="lv-empty">
+            <p class="ex-live-empty lv-wait">${float ? 'Les sous-titres s’afficheront ici dès que le jury pose une question.' : 'Dès que le jury pose une question, les sous-titres s’affichent ici, en anglais et en français.'}</p>
+            ${float || R.float ? `<p class="lv-tip">${icon('video', 'ico-inline')}<span>${float ? 'Glissez cette fenêtre juste sous la caméra.' : 'Fenêtre flottante ouverte : placez-la juste sous la caméra.'}</span></p>` : ''}
+          </div>${startErr || listenErr}`;
       }
-      const headA = float ? `<div class="ex-live-head lv-head">${statusHTML(busy)}<span class="spacer"></span>${toolsHTML(true, a)}</div>${warnHTML()}` : head;
-      const fr = a.fr ? `<p class="lv-fr"><span class="lv-l">Traduction</span> <span class="ex-live-fr" data-b="fr">${esc(a.fr)}</span></p>` : `<p class="lv-fr" hidden><span class="lv-l">Traduction</span> <span class="ex-live-fr" data-b="fr"></span></p>`;
-      return `${headA}
-        <div class="ex-live-q lv-q"><span class="lv-l">Question entendue</span> <span class="ex-live-en" lang="en">${esc(a.question)}</span></div>
-        <div class="ex-live-a lv-a">
-          <span class="lv-l lv-al">Réponse proposée</span>
-          <p class="ex-live-ans lv-ans${busy ? ' is-streaming' : ''}" lang="en" data-b="ans">${esc(busy ? R.partial : a.text)}</p>
+      const lines = linesFor(a, busy);
+      // Fenêtre flottante : pas de ligne d'en-tête, l'état passe dans le pied (plus de place pour les sous-titres).
+      const top = float ? warnHTML() : head;
+      const st = float ? statusHTML(busy, a) : '';
+      const kw = !busy && arr(a.keyWords).length ? `<div class="ex-live-kw lv-kw" aria-label="Mots-clés">${a.keyWords.map(kwHTML).join('')}</div>` : '<span class="lv-kw-gap"></span>';
+      return `${top}
+        ${juryHTML(a)}
+        <div class="ex-live-a lv-a" data-b="ans-wrap">
+          <div class="ex-live-ans lv-ans${busy ? ' is-streaming' : ''}" data-b="ans" aria-label="Réponse proposée">${lines.map((l) => lineHTML(l)).join('')}</div>
         </div>
         ${!busy && a.error ? errHTML(a.error, a.errKey || a.error === NO_KEY_LIVE ? 'key' : '', float) : ''}
-        <div class="lv-sub">
-          ${fr}
-          ${!busy && arr(a.keyWords).length ? `<div class="ex-live-kw lv-kw" aria-label="Mots-clés"><span class="lv-l">Mots-clés</span>${a.keyWords.map(kwHTML).join('')}</div>` : ''}
-        </div>
-        ${startErr || listenErr}
-        ${float ? '' : toolsHTML(false, a)}${interim}`;
+        <div class="lv-foot">${st}${kw}${answerTools()}</div>
+        ${startErr || listenErr}`;
     }
     const views = () => [$('[data-b="live"]', root)].concat(R.float ? [R.float.box] : []).filter(Boolean);
+    // Taille des sous-titres : la plus grande qui tient en entier ; en dessous du minimum, défilement doux.
     function fitAns(box) {
       const el = box && $('[data-b="ans"]', box);
       const wrap = el && el.parentElement;
       if (!el || !wrap) return;
       const inFloat = box === (R.float && R.float.box);
       const full = !inFloat && box.matches && box.matches(':fullscreen');
-      if (!(inFloat || full || wide())) { el.style.fontSize = ''; return; }
+      if (!(inFloat || full || wide())) { el.style.fontSize = ''; wrap.classList.remove('is-scroll'); return; }
       const w = wrap.clientWidth || 600;
-      const cap = Math.max(18, Math.min(inFloat ? 60 : full ? 96 : 60, w / (full ? 11 : 13)));
+      const min = inFloat ? 22 : full ? 32 : 24;
+      const cap = Math.max(min, Math.min(inFloat ? 38 : full ? 72 : 44, w / (full ? 15 : 17)));
       const id = (shown() || {}).id || '';
       let hi = cap;
-      if (R.busy && box.dataset.fitFor === id && parseFloat(el.style.fontSize)) hi = Math.min(cap, parseFloat(el.style.fontSize));
+      if (R.busy && box.dataset.fitFor === id && parseFloat(el.style.fontSize)) hi = Math.max(min, Math.min(cap, parseFloat(el.style.fontSize)));
       box.dataset.fitFor = id;
-      let lo = 15;
+      const fits = () => wrap.scrollHeight <= wrap.clientHeight + 1;
+      let lo = min;
       el.style.fontSize = hi + 'px';
-      if (wrap.scrollHeight <= wrap.clientHeight + 1) return;
+      if (fits()) { wrap.classList.remove('is-scroll'); return; }
       for (let i = 0; i < 8; i++) {
         const mid = (lo + hi) / 2;
         el.style.fontSize = mid + 'px';
-        if (wrap.scrollHeight <= wrap.clientHeight + 1) lo = mid; else hi = mid;
+        if (fits()) lo = mid; else hi = mid;
       }
       el.style.fontSize = Math.floor(lo) + 'px';
+      wrap.classList.toggle('is-scroll', !fits());
     }
     function paintLive() {
       if (!C.alive) return;
       const box = $('[data-b="live"]', root);
       box.classList.toggle('is-on', L.A.on);
+      box.classList.toggle('has-interim', !!(L.A.on && L.A.interim));
       box.innerHTML = liveHTML(false);
       fitAns(box);
       if (R.float) {
         R.float.box.classList.toggle('is-on', L.A.on);
+        R.float.box.classList.toggle('has-interim', !!(L.A.on && L.A.interim));
         R.float.box.innerHTML = liveHTML(true);
         fitAns(R.float.box);
       }
     }
+    // Flux : phrases mises à jour sur place, les nouvelles apparaissent en fondu (pas de clignotement).
+    function syncLines(el, lines) {
+      lines.forEach((l, i) => {
+        const p = el.children[i];
+        if (!p) { el.insertAdjacentHTML('beforeend', lineHTML(l, true)); return; }
+        const en = p.firstElementChild, tr = p.lastElementChild;
+        if (en.textContent !== l.en) en.textContent = l.en;
+        if (tr.textContent !== str(l.fr)) tr.textContent = str(l.fr);
+      });
+      while (el.children.length > lines.length) el.lastElementChild.remove();
+    }
     function paintAnswer() {
-      views().forEach((v) => { const el = $('[data-b="ans"]', v); if (el) { el.textContent = R.partial; fitAns(v); } });
+      const a = R.item;
+      if (!a || shown() !== a) return;
+      const lines = linesFor(a, true);
+      views().forEach((v) => {
+        const el = $('[data-b="ans"]', v);
+        if (!el) return;
+        el.classList.add('is-streaming');
+        syncLines(el, lines);
+        fitAns(v);
+      });
+    }
+    function paintQFr(item) {
+      if (shown() !== item) return;
+      views().forEach((v) => {
+        const el = $('[data-b="fr"]', v);
+        if (el) { el.textContent = item.fr; if (el.parentElement) el.parentElement.hidden = !item.fr; fitAns(v); }
+      });
     }
     C.paintInterim = () => {
       if (L.A.interim) warmAI();
-      views().forEach((v) => { const el = $('[data-b="interim"]', v); if (el) el.textContent = L.A.interim; });
+      const a = shown();
+      const [label, k] = statusInfo(R.busy && R.item === a, a);
+      views().forEach((v) => {
+        const talk = !!(L.A.on && L.A.interim);
+        const was = v.classList.contains('has-interim');
+        v.classList.toggle('has-interim', talk);
+        const el = $('[data-b="interim"]', v); if (el) el.textContent = L.A.interim;
+        const st = $('[data-b="status"]', v), sl = $('[data-b="status-l"]', v);
+        if (st) st.dataset.k = k;
+        if (sl && sl.textContent !== label) sl.textContent = label;
+        if (was !== talk) fitAns(v);
+      });
     };
     // Connexion à l'IA ouverte d'avance (DNS + TLS) : au lancement et dès que le jury parle.
     let warmedAt = 0;
@@ -3047,14 +3122,14 @@
           if (question.includes(prev.question)) call.answers = call.answers.filter((x) => x !== prev);
           else if (!prev.text) prev.error = 'Interrompue par la question suivante.';
         }
-        item = { id: 'a-' + uid(), question, fr: '', text: '', keyWords: [], mine: '', at: nowIso(), skipped: false, error: '' };
+        item = { id: 'a-' + uid(), question, fr: '', text: '', lines: [], keyWords: [], mine: '', at: nowIso(), skipped: false, error: '' };
         call.answers.push(item);
         if (call.answers.length > 60) call.answers.splice(0, call.answers.length - 60);
       }
       const born = Date.now();
       const req = {};
       const ctrl = new AbortController();
-      Object.assign(R, { req, ctrl, item, busy: true, partial: '' });
+      Object.assign(R, { req, ctrl, item, busy: true, partial: '', lines: [] });
       item.error = '';
       paintLive(); paintHist();
       const drop = () => { call.answers = call.answers.filter((x) => x !== item); if (R.item === item) R.item = null; };
@@ -3064,18 +3139,23 @@
           S.examAI.translate(question, { to: 'fr', signal: ctrl.signal }).then((fr) => {
             fr = str(fr).trim();
             if (!fr || !C.alive || !call.answers.includes(item)) return;
+            if (item.fr) return;
             item.fr = fr; C.saveSoon();
-            if (shown() === item) views().forEach((v) => {
-              const el = $('[data-b="fr"]', v);
-              if (el) { el.textContent = fr; if (el.parentElement) el.parentElement.hidden = false; fitAns(v); }
-            });
+            paintQFr(item);
             paintHist();
           }).catch(() => {  });
         }
         const r = await S.examAI.liveAnswer({
           subject: s.subject, question, expose: callExpose(), shorter: !!o.shorter, signal: ctrl.signal,
           turns: call.turns.slice(-16).map((t) => ({ who: t.who, text: t.text })),
-          onDelta: (t) => { if (R.req === req && C.alive) { R.partial = str(t); paintAnswer(); } }
+          onDelta: (t, info) => {
+            if (R.req !== req || !C.alive) return;
+            R.partial = str(t);
+            R.lines = arr(info && info.lines);
+            const qFr = str(info && info.qFr).trim();
+            if (qFr && !item.fr) { item.fr = qFr; paintQFr(item); }
+            paintAnswer();
+          }
         });
         if (R.req !== req || !C.alive) return;
         if (r && r.skip) {
@@ -3087,6 +3167,8 @@
         const text = str(r && r.text).trim();
         if (!text) throw new Error('Réponse vide de l’IA — réessayez.');
         item.text = text;
+        item.lines = arr(r.lines).filter((l) => l && str(l.en).trim()).map((l) => ({ en: str(l.en).trim(), fr: str(l.fr).trim() })).slice(0, 12);
+        if (!item.fr && str(r.qFr).trim()) item.fr = str(r.qFr).trim();
         item.keyWords = arr(r.keyWords).map(str).map((k) => k.trim()).filter(Boolean).slice(0, 8);
         R.jury = R.jury.filter((x) => x.at > born);
       } catch (e) {
@@ -3095,7 +3177,7 @@
         item.error = e && e.code === 'NO_KEY' ? NO_KEY_LIVE : keyBad ? (errMsg(e) || 'Clé IA refusée : corrigez-la dans Réglages.') : errMsg(e);
         item.errKey = keyBad;
       } finally {
-        if (R.req === req) { Object.assign(R, { busy: false, ctrl: null, partial: '' }); if (C.alive) { paintLive(); paintHist(); } }
+        if (R.req === req) { Object.assign(R, { busy: false, ctrl: null, partial: '', lines: [] }); if (C.alive) { paintLive(); paintHist(); } }
         C.saveSoon();
       }
     }
@@ -3188,11 +3270,12 @@
       try { doc.title = 'Aide Visio · appel'; } catch (e) {  }
       copyStylesTo(doc);
       doc.documentElement.lang = 'fr';
-      if (document.documentElement.dataset.theme) doc.documentElement.dataset.theme = document.documentElement.dataset.theme;
+      // Sous-titres : toujours sur fond sombre, quel que soit le thème de l'appli.
+      doc.documentElement.dataset.theme = 'dark';
       const scale = document.documentElement.style.getPropertyValue('--font-scale');
       if (scale) doc.documentElement.style.setProperty('--font-scale', scale);
       doc.body.className = 'pip-body ex-float-body lv-float-body';
-      doc.body.innerHTML = '<div class="ex-float lv-float"><section class="ex-live lv-stage lv-fit" data-b="float" aria-live="polite"></section></div>';
+      doc.body.innerHTML = '<div class="ex-float lv-float"><section class="ex-live lv-stage lv-fit" data-b="float" data-theme="dark" aria-live="polite"></section></div>';
       R.float = { win: w, box: doc.querySelector('[data-b="float"]') };
       doc.addEventListener('click', (e) => { const b = e.target.closest('[data-act]'); if (b && !b.disabled) onAct(b.dataset.act); });
       let t = 0;

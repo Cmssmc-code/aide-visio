@@ -372,7 +372,7 @@ test('liveAnswer : prompt (sujet, question d’examen, mots du jury), flux sans 
   assert.equal(c.purpose, 'live');
   assert.equal(c.stream, true);
   assert.equal(c.temperature, 0.5);
-  assert.equal(c.maxTokens, 400);
+  assert.equal(c.maxTokens, 800);
   assert.equal(c.timeoutMs, 15000);
   assert.equal(c.budgetMs, 30000);
   assert.match(c.prompt, /Is the AI boom a bubble\?/, 'titre du sujet');
@@ -384,7 +384,7 @@ test('liveAnswer : prompt (sujet, question d’examen, mots du jury), flux sans 
   assert.doesNotMatch(c.prompt, /marker-[0-5]-end/, '6 derniers échanges seulement (contexte réduit)');
   assert.match(c.system, /Keywords: expression \(traduction française\)/, 'mots-clés avec traduction');
   assert.match(c.system, /TRAINING/);
-  assert.match(c.system, /90 words/);
+  assert.match(c.system, /75 words/);
   assert.match(c.system, /exactly "—"/);
   assert.match(c.system, /Keywords:/);
   assert.equal(r.skip, false);
@@ -401,7 +401,7 @@ test('liveAnswer : réponse nettoyée (préambule, gras, guillemets) et mots-cl�
   assert.equal(r.text, 'I agree with the author to some extent.');
   assert.deepEqual(r.keyWords, ['stretched valuations', 'to some extent', 'bubble']);
   const split = plain(env.x._internal.splitLive('Firms will suffer.\nKeyw'));
-  assert.deepEqual(split, { text: 'Firms will suffer.', keyWords: [] }, 'ligne « Keywords » en cours masquée');
+  assert.deepEqual(split, { text: 'Firms will suffer.', keyWords: [], qFr: '', lines: [{ en: 'Firms will suffer.', fr: '' }] }, 'ligne « Keywords » en cours masquée');
   const fr = plain(env.x._internal.splitLive('Firms will suffer.\nKeywords: supply chain (chaîne d’approvisionnement); to pass on — répercuter; trade war = guerre commerciale; tariffs (droits de douane, taxes)'));
   assert.deepEqual(fr.keyWords, ['supply chain (chaîne d’approvisionnement)', 'to pass on (répercuter)', 'trade war (guerre commerciale)', 'tariffs (droits de douane, taxes)'], 'traduction FR de chaque mot-clé');
   const comma = plain(env.x._internal.splitLive('Yes.\nKeywords: tariffs (droits de douane, taxes), bubble (bulle)'));
@@ -422,12 +422,75 @@ test('liveAnswer : « Plus court » change la consigne', async () => {
   const env = makeEnv({ replies: [LIVE_REPLY, 'Tariffs hurt consumers. Prices go up.'] });
   await env.x.liveAnswer({ subject: SUBJECT, question: 'What about tariffs?' });
   const r = await env.x.liveAnswer({ subject: SUBJECT, question: 'What about tariffs?', shorter: true });
-  assert.match(env.calls[0].system, /90 words/);
+  assert.match(env.calls[0].system, /75 words/);
   assert.doesNotMatch(env.calls[0].system, /40 words/);
   assert.match(env.calls[1].system, /2 short sentences, 40 words maximum/);
-  assert.doesNotMatch(env.calls[1].system, /90 words/);
+  assert.doesNotMatch(env.calls[1].system, /75 words/);
   assert.match(env.calls[1].prompt, /40 words maximum/);
   assert.equal(r.text, 'Tariffs hurt consumers. Prices go up.');
+});
+
+const BI_REPLY = [
+  'Q-FR: Que pensez-vous des droits de douane ?',
+  'EN: I think tariffs mostly hurt consumers.',
+  'FR: Je pense que les droits de douane nuisent surtout aux consommateurs.',
+  'EN: First, firms pass the extra cost on to their prices.',
+  'FR: D’abord, les entreprises répercutent le surcoût sur leurs prix.',
+  'Keywords: to pass on (répercuter); consumers (consommateurs)'
+].join('\n');
+const BI_TEXT = 'I think tariffs mostly hurt consumers. First, firms pass the extra cost on to their prices.';
+
+test('liveAnswer : sous-titres bilingues (Q-FR, paires EN / FR, mots-clés) en flux', async () => {
+  const env = makeEnv({ replies: [BI_REPLY] });
+  const deltas = [];
+  const r = await env.x.liveAnswer({ subject: SUBJECT, question: 'what about tariffs', onDelta: (t, info) => deltas.push({ t, info: plain(info) }) });
+  const c = env.calls[0];
+  assert.match(c.system, /Q-FR: /);
+  assert.match(c.system, /EN: first sentence/);
+  assert.match(c.system, /FR: its French translation/);
+  assert.match(c.system, /no Q-FR line/);
+  assert.equal(r.skip, false);
+  assert.equal(r.text, BI_TEXT);
+  assert.equal(r.qFr, 'Que pensez-vous des droits de douane ?');
+  assert.deepEqual(plain(r.lines), [
+    { en: 'I think tariffs mostly hurt consumers.', fr: 'Je pense que les droits de douane nuisent surtout aux consommateurs.' },
+    { en: 'First, firms pass the extra cost on to their prices.', fr: 'D’abord, les entreprises répercutent le surcoût sur leurs prix.' }
+  ]);
+  assert.deepEqual(plain(r.keyWords), ['to pass on (répercuter)', 'consumers (consommateurs)']);
+  // Flux : la traduction de la question arrive d'abord, puis les phrases ; jamais d'étiquette visible.
+  assert.equal(deltas[0].t, '');
+  assert.ok(deltas[0].info.qFr.length > 0, 'traduction de la question avant la réponse');
+  assert.ok(deltas.every(d => !/(?:^|\s)(?:EN|FR|Q-FR|Keywords)\s*:/.test(d.t + ' ' + d.info.lines.map(l => l.en + ' ' + l.fr).join(' '))), 'aucune étiquette affichée');
+  assert.ok(deltas.every(d => BI_TEXT.startsWith(d.t)), 'texte anglais toujours un début de la réponse');
+  assert.ok(deltas.some(d => d.info.lines.length === 2 && d.info.lines[1].fr === ''), 'phrase anglaise affichée avant sa traduction');
+  const last = deltas[deltas.length - 1];
+  assert.equal(last.t, BI_TEXT);
+  assert.equal(last.info.lines[1].fr, 'D’abord, les entreprises répercutent le surcoût sur leurs prix.');
+});
+
+test('splitLive : format tolérant (gras, puces, English/French, paire sur une ligne, étiquette coupée)', () => {
+  const s = (t) => plain(env0.x._internal.splitLive(t));
+  const env0 = makeEnv();
+  assert.deepEqual(s('**EN:** Yes, I agree.\n**FR:** Oui, je suis d’accord.').lines, [{ en: 'Yes, I agree.', fr: 'Oui, je suis d’accord.' }]);
+  assert.deepEqual(s('- English: Prices go up.\n- French: Les prix montent.').lines, [{ en: 'Prices go up.', fr: 'Les prix montent.' }]);
+  assert.deepEqual(s('EN: Prices go up. FR: Les prix montent.').lines, [{ en: 'Prices go up.', fr: 'Les prix montent.' }]);
+  assert.deepEqual(s('EN: Prices go up\nbecause of tariffs.\nFR: Les prix montent').lines, [{ en: 'Prices go up because of tariffs.', fr: 'Les prix montent' }], 'suite de ligne rattachée');
+  for (const cut of ['Q-FR: Bonjour\nEN: Yes.\nF', 'Q-FR: Bonjour\nEN: Yes.\nFR:', 'Q-FR: Bonjour\nEN: Yes.\nKeyw']) {
+    const r = s(cut);
+    assert.equal(r.text, 'Yes.', 'étiquette coupée masquée : ' + JSON.stringify(cut));
+    assert.deepEqual(r.lines, [{ en: 'Yes.', fr: '' }]);
+  }
+  assert.deepEqual(s('Q').lines, [], 'début de « Q-FR » masqué');
+  assert.equal(s('Q-FR: Pouvez-vous m’entendre ?\n—').text, '—', 'tiret après Q-FR → saut');
+  const legacy = s('I agree. Prices will rise. For example, U.S. firms pay more.');
+  assert.deepEqual(legacy.lines.map(l => l.en), ['I agree.', 'Prices will rise.', 'For example, U.S. firms pay more.'], 'ancien format : découpé en phrases');
+  assert.ok(legacy.lines.every(l => l.fr === ''));
+});
+
+test('liveAnswer : « — » après Q-FR → skip', async () => {
+  const env = makeEnv({ replies: ['Q-FR: Vous m’entendez ?\n—'] });
+  const r = await env.x.liveAnswer({ subject: SUBJECT, question: 'Can you hear me?' });
+  assert.deepEqual(plain(r), { text: '', keyWords: [], skip: true });
 });
 
 test('liveAnswer : sans clé → NO_KEY ; réponse vide → EMPTY ; question absente', async () => {
