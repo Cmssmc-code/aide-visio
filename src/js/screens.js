@@ -679,6 +679,7 @@
     // ---------- Questions « Avez-vous entendu ? » ----------
 
     function ask(key, question, onNo) {
+      if (asks[key]) asks[key](null);
       set(key, {
         status: 'ask',
         detail: question,
@@ -686,8 +687,14 @@
         actions: [{ op: 'yes', label: 'Oui, j’ai entendu', primary: true }, { op: 'no', label: 'Non' }, { op: 'test', label: 'Réécouter' }]
       });
       return new Promise((res) => {
-        const t = setTimeout(() => { delete asks[key]; res(null); }, 45000);
-        asks[key] = (v) => { clearTimeout(t); delete asks[key]; if (v === 'no' && onNo) onNo(); res(v); };
+        let done;
+        const t = setTimeout(() => {
+          if (asks[key] === done) delete asks[key];
+          if (c.alive && byKey[key].status === 'ask') set(key, { status: 'warn', detail: 'Pas de réponse.', select: byKey[key].select, actions: [{ op: 'test', label: 'Réécouter' }] });
+          res(null);
+        }, 45000);
+        done = (v) => { clearTimeout(t); if (asks[key] === done) delete asks[key]; if (v === 'no' && onNo) onNo(); res(v); };
+        asks[key] = done;
       });
     }
     function answer(key, v) { if (asks[key]) asks[key](v); }
@@ -763,8 +770,11 @@
       return o && !o.isDefault ? ` (${o.label})` : '';
     }
 
+    // camDone : fin de l'aperçu en cours ; camRun : promesse du test caméra en cours.
+    let camDone = null; let camRun = null;
     function stopCamera() {
       clearInterval(camTimer); camTimer = 0;
+      if (camDone) { const f = camDone; camDone = null; f(); }
       if (camStream) { D.stop(camStream); camStream = null; }
       const box = body.querySelector('.dg-media');
       if (box) { const v = box.querySelector('video'); try { v.srcObject = null; } catch (e) {  } box.hidden = true; }
@@ -787,6 +797,8 @@
     async function testCamera() {
       if (busy.camera || !D) return;
       busy.camera = true;
+      let release;
+      camRun = new Promise((r) => { release = r; });
       focusRow('camera');
       stopCamera();
       try {
@@ -834,10 +846,13 @@
           const btn = body.querySelector('.dg-row[data-key="camera"] [data-op="stopcam"]');
           if (btn) btn.textContent = `Fermer l’aperçu (${SECS} s)`;
         }, 1000);
-        await new Promise((r) => { const t = setInterval(() => { if (!camTimer) { clearInterval(t); r(); } }, 200); });
-      } finally { busy.camera = false; }
+        await new Promise((r) => { camDone = r; });
+      } finally { busy.camera = false; release(); }
     }
 
+    // Dictée en cours : arrêtée dès qu'on quitte l'écran pour libérer le micro.
+    let speechAc = null;
+    c.add(() => { if (speechAc) speechAc.abort(); });
     async function testSpeech() {
       if (busy.speech || !D) return;
       busy.speech = true;
@@ -846,7 +861,9 @@
         if (!sup.webSpeech) { const x = D.explainSpeech('unsupported'); set('speech', { status: 'err', detail: x.title, advice: x.advice }); return; }
         if (navigator.onLine === false) { const x = D.explainSpeech('network'); set('speech', { status: 'err', detail: x.title, advice: x.advice }); return; }
         set('speech', { status: 'pending', detail: 'Dites « hello » maintenant, en anglais…' });
-        const r = await D.listenOnce({ lang: 'en-US', timeoutMs: 8000, onText: (t) => detail('speech', `Entendu : « ${t} »…`) });
+        speechAc = typeof AbortController === 'function' ? new AbortController() : null;
+        const r = await D.listenOnce({ lang: 'en-US', timeoutMs: 8000, signal: speechAc ? speechAc.signal : undefined, onText: (t) => detail('speech', `Entendu : « ${t} »…`) });
+        speechAc = null;
         if (!c.alive) return;
         const micAdvice = D.chosen('mic') ? 'La reconnaissance vocale de Chrome écoute toujours le micro par défaut de Windows (pas celui choisi plus haut).' : '';
         if (r.ok) {
@@ -1015,6 +1032,7 @@
       if (running) return;
       running = true;
       ranOnce = true;
+      stopCamera();
       rows.forEach((r) => { if (!r.optional && r.status !== 'pending') set(r.key, { status: 'idle', select: r.select }); });
       drawSummary();
       try {
@@ -1022,6 +1040,7 @@
         const keyP = testKey();
         for (const k of ['mic', 'speaker', 'camera', 'speech', 'voice']) {
           if (!c.alive) return;
+          if (k === 'camera' && camRun) await camRun;
           await TESTS[k]();
         }
         await keyP;
@@ -1056,7 +1075,8 @@
       if (byKey[k].select) byKey[k].select.value = t.value;
       if (running) return;
       answer(k, null);
-      if (k === 'camera') stopCamera();
+      // Attendre la fin de l'aperçu en cours avant d'ouvrir la nouvelle caméra.
+      if (k === 'camera') { stopCamera(); Promise.resolve(camRun).then(() => { if (c.alive && !running) TESTS.camera(); }); return; }
       if (TESTS[k]) TESTS[k]();
     });
 

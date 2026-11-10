@@ -7,6 +7,7 @@
   (vous), découpe les phrases et les transcrit sur le PC (Whisper), puis les envoie à Aide Visio (mode « Appel
   ou visio sur ce PC (son interne) »). Sans droits administrateur.
   -Uninstall : retire le lancement automatique et arrête le programme.
+#>
 param([switch]$Uninstall)
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -31,7 +32,7 @@ $pyw = (Get-Command pythonw.exe -ErrorAction SilentlyContinue).Source
 $py = (Get-Command python.exe -ErrorAction SilentlyContinue).Source
 if (-not $pyw -or -not $py) { Write-Host 'Python 3 est introuvable : installez-le (python.org), puis relancez.' -ForegroundColor Red; exit 1 }
 
-& $py -m pip install --user --quiet --disable-pip-version-check pyaudiowpatch numpy websockets faster-whisper
+& $py -m pip install --user --quiet --disable-pip-version-check pyaudiowpatch numpy websockets faster-whisper psutil
 if ($LASTEXITCODE -ne 0) { Write-Host 'Installation des modules Python impossible.' -ForegroundColor Red; exit 1 }
 
 $shell = New-Object -ComObject WScript.Shell

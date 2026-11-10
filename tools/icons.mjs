@@ -33,17 +33,29 @@ async function render({ size, fullBleed = false, scale = 1, small = false, hideG
     svg.setAttribute('width', size);
     svg.setAttribute('height', size);
     if (small) svg.classList.add('small');
-    if (fullBleed) {
-      const clip = svg.querySelector('#shape');
-      clip.innerHTML = '';
-      const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      r.setAttribute('width', '1024'); r.setAttribute('height', '1024');
-      clip.appendChild(r);
-      svg.querySelector('#edge')?.remove();
+    const vb = svg.viewBox.baseVal;
+    if (!vb || !vb.width || !vb.height) throw new Error('icon.svg : viewBox manquant');
+    // Fond = #bg ou, à défaut, premier <rect> enfant direct du SVG.
+    const bg = svg.querySelector('#bg') || svg.querySelector(':scope > rect');
+    if (!bg) throw new Error('icon.svg : rectangle de fond introuvable');
+    // Pictogramme = #glyph ou, à défaut, tout ce qui suit le fond, regroupé dans un <g>.
+    let glyph = svg.querySelector('#glyph');
+    if (!glyph) {
+      const parts = [...svg.children].filter((el) => el !== bg && !['title', 'desc', 'defs', 'style'].includes(el.localName));
+      if (!parts.length) throw new Error('icon.svg : pictogramme introuvable');
+      glyph = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      glyph.id = 'glyph';
+      parts[0].before(glyph);
+      parts.forEach((el) => glyph.appendChild(el));
     }
-    const glyph = svg.querySelector('#glyph');
+    if (fullBleed) {
+      bg.setAttribute('x', vb.x); bg.setAttribute('y', vb.y);
+      bg.setAttribute('width', vb.width); bg.setAttribute('height', vb.height);
+      bg.removeAttribute('rx'); bg.removeAttribute('ry');
+    }
     if (scale !== 1) {
-      glyph.setAttribute('transform', `translate(512 512) scale(${scale}) translate(-512 -512) ` + (glyph.getAttribute('transform') || ''));
+      const cx = vb.x + vb.width / 2, cy = vb.y + vb.height / 2;
+      glyph.setAttribute('transform', `translate(${cx} ${cy}) scale(${scale}) translate(${-cx} ${-cy}) ` + (glyph.getAttribute('transform') || ''));
     }
     if (hideGlyph) glyph.style.display = 'none';
   }, { size, fullBleed, scale, small, hideGlyph });
@@ -84,15 +96,16 @@ function buildIco(entries) {
 
 const problems = [];
 const pngs = {};
-for (const v of PNGS) {
-  const buf = await render(v);
-  fs.writeFileSync(path.join(ICONS, v.file), buf);
-  pngs[v.file] = buf;
-  console.log(`  ${v.file.padEnd(22)} ${v.size}px  ${(buf.length / 1024).toFixed(1)} Ko`);
-}
+// Tout est rendu en mémoire d'abord : aucun fichier n'est écrit si un rendu échoue.
+for (const v of PNGS) pngs[v.file] = await render(v);
 const icoEntries = [];
 for (const size of ICO_SIZES) icoEntries.push({ size, png: await render({ size, small: size <= SMALL_MAX }) });
 const ico = buildIco(icoEntries);
+for (const v of PNGS) {
+  const buf = pngs[v.file];
+  fs.writeFileSync(path.join(ICONS, v.file), buf);
+  console.log(`  ${v.file.padEnd(22)} ${v.size}px  ${(buf.length / 1024).toFixed(1)} Ko`);
+}
 fs.writeFileSync(path.join(ICONS, 'aidevisio.ico'), ico);
 console.log(`  ${'aidevisio.ico'.padEnd(22)} ${ICO_SIZES.join('/')}  ${(ico.length / 1024).toFixed(1)} Ko`);
 

@@ -327,9 +327,12 @@
       const fin = () => {
         if (done) return; done = true; clearTimeout(t);
         try { r.abort(); } catch (e) {  }
-        res({ ok: !!text.trim() && !code, text: text.trim(), code: text.trim() ? '' : code || 'no-speech' });
+        const tx = text.trim(); const ok = !!tx && (!code || code === 'no-speech');
+        res({ ok, text: tx, code: ok ? '' : (code || 'no-speech') });
       };
       const t = setTimeout(fin, o.timeoutMs || 8000);
+      // Annulation par AbortSignal (écran quitté) : libère le micro tout de suite.
+      if (o.signal) { if (o.signal.aborted) { fin(); return; } o.signal.addEventListener('abort', fin, { once: true }); }
       r.onresult = (e) => {
         let all = '';
         for (let i = 0; i < e.results.length; i++) all += e.results[i][0] ? e.results[i][0].transcript : '';

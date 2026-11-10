@@ -25,16 +25,33 @@ const check = (name, ok, detail = '') => {
   console.log(`  ${ok ? '✓' : '✗'} ${name}${detail ? ' — ' + detail : ''}`);
 };
 
+// Chrome cherché avant la copie temporaire : un échec ici ne laisse rien sur le disque.
+let chromePath;
+try {
+  chromePath = findChrome();
+} catch (e) {
+  console.error(`  ✗ Chrome introuvable — ${e.message}`);
+  process.exit(1);
+}
+
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aidevisio-pwa-'));
-fs.cpSync(SRC_DIR, tmp, { recursive: true });
-const { server, url } = await startServer({ port: 0, dir: tmp, quiet: true });
+let server, url, browser;
+try {
+  fs.cpSync(SRC_DIR, tmp, { recursive: true });
+  ({ server, url } = await startServer({ port: 0, dir: tmp, quiet: true }));
+  browser = await chromium.launch({
+    executablePath: chromePath,
+    headless: !HEADED,
+    args: ['--host-resolver-rules=MAP generativelanguage.googleapis.com 127.0.0.1:9, MAP api.anthropic.com 127.0.0.1:9, MAP cdn.jsdelivr.net 127.0.0.1:9'],
+  });
+} catch (e) {
+  server?.close();
+  fs.rmSync(tmp, { recursive: true, force: true });
+  console.error(`  ✗ Lancement impossible — ${e.message}`);
+  process.exit(1);
+}
 const ORIGIN = url.replace(/\/$/, '');
 
-const browser = await chromium.launch({
-  executablePath: findChrome(),
-  headless: !HEADED,
-  args: ['--host-resolver-rules=MAP generativelanguage.googleapis.com 127.0.0.1:9, MAP api.anthropic.com 127.0.0.1:9, MAP cdn.jsdelivr.net 127.0.0.1:9'],
-});
 const context = await browser.newContext({ serviceWorkers: 'allow' });
 let apiHits = 0;
 await context.route(/generativelanguage\.googleapis\.com|api\.anthropic\.com/, (route) => {
@@ -66,7 +83,7 @@ try {
     };
   });
   check('modules de l’oral chargés', !examState.modules.length, examState.modules.length ? 'manquants : ' + examState.modules.join(', ') : `${examState.subjects} sujets`);
-  check('onglets Oral / Fiches / Réglages', examState.tabs.join() === 'home,fiches,settings', examState.tabs.join(', '));
+  check('onglets Accueil / Historique / Fiches / Réglages', examState.tabs.join() === 'home,historique,fiches,settings', examState.tabs.join(', '));
   check('raccourcis du manifeste : oral blanc et fiches', examState.shortcuts.some((u) => /#\/oral\/new$/.test(u)) && examState.shortcuts.some((u) => /#\/fiches$/.test(u)), examState.shortcuts.join(', '));
 
   const swState = await page.evaluate(async () => {

@@ -75,7 +75,9 @@ export function startServer({ port = 8080, dir = 'src', host = '127.0.0.1', quie
     try {
       if (fs.statSync(file).isDirectory()) {
         if (!pathname.endsWith('/')) {
-          res.writeHead(301, { Location: pathname + '/' + (req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '') }).end();
+          // Chemin brut (déjà percent-encodé) : le chemin décodé peut contenir des caractères interdits en en-tête.
+          const raw = new URL(req.url, 'http://localhost');
+          res.writeHead(301, { Location: raw.pathname + '/' + raw.search }).end();
           return done(301);
         }
         file = path.join(file, 'index.html');

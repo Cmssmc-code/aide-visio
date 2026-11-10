@@ -293,6 +293,50 @@ test('evaluate : critères en objet / barème différent ramené, réponse inval
   await assert.rejects(env2.x.evaluate({ subject: SUBJECT, expose: longExpose }), e => e.code === 'PARSE');
 });
 
+test('evaluate : cases cochées par l\'IA ne lèvent pas le plafond « exposé quasi vide » ; modelPlan structuré', async () => {
+  const checklist = { intro: true, source: true, tone: true };
+  const base = { subject: SUBJECT, expose: 'Today I am going to present an article.', interview: [], durations: { exposeMs: 12 * 60000 }, checklist };
+  const env = makeEnv({ replies: [evalReply([4, 4, 4, 3, 3, 2])] });
+  const r = await env.x.evaluate(Object.assign({ checklistAuto: { intro: true, source: true, tone: true } }, base));
+  assert.equal(r.criteria.find(c => c.id === 'synthesis').score, 1);
+  const env2 = makeEnv({ replies: [evalReply([4, 4, 4, 3, 3, 2])] });
+  const r2 = await env2.x.evaluate(base);
+  assert.equal(r2.criteria.find(c => c.id === 'synthesis').score, 4);
+  const reply = Object.assign(evalReply([4, 4, 4, 3, 3, 2]), { modelPlan: { introduction: 'Hook', parts: ['I', 'II'] } });
+  const r3 = await makeEnv({ replies: [reply] }).x.evaluate(base);
+  assert.equal(r3.modelPlan, '**introduction** : Hook\n\n**parts** : ["I","II"]');
+});
+
+test('answerFeedback : score absent → 2e tentative', async () => {
+  const env = makeEnv({ replies: [{ good: ['Bonne idée'], better: 'I agree.' }, { score: 7, good: ['Bonne idée'], better: 'I agree.' }] });
+  const r = await env.x.answerFeedback({ subject: SUBJECT, question: 'Do you agree?', answer: 'Yes I agree with it.' });
+  assert.equal(env.calls.length, 2);
+  assert.equal(r.score, 7);
+});
+
+test('generateSubject : le thème demandé prime sur celui de l\'IA', async () => {
+  const s = await makeEnv({ replies: [genSubjectReply] }).x.generateSubject({ theme: 2 });
+  assert.equal(s.theme, 2);
+});
+
+test('subjectFromText : question trouvée au-delà de 16 000 caractères', async () => {
+  const many = Array.from({ length: 80 }, (_, i) => para(i)).join('\n\n');
+  const text = many + '\n\nQuestion: Should investors be worried?';
+  assert.ok(text.length > 16000);
+  const env = makeEnv({ replies: [{ headerBlocks: [], title: 'T', question: 'other?', corrige: {} }] });
+  const s = await env.x.subjectFromText(text);
+  assert.equal(s.question, 'Should investors be worried?');
+  assert.equal(s.questionProposed, false);
+});
+
+test('liveNotes : les fautes connues transmises sont les plus récentes', async () => {
+  const known = Array.from({ length: 40 }, (_, i) => ({ said: 'err' + i, better: 'fix' + i }));
+  const env = makeEnv({ replies: [{ covered: {}, errors: [], tips: [] }] });
+  await env.x.liveNotes({ subject: SUBJECT, transcript: 'The author explain that he go to the market every day.', knownErrors: known });
+  assert.match(env.calls[0].prompt, /err39/);
+  assert.doesNotMatch(env.calls[0].prompt, /err0 /);
+});
+
 test('translate : texte nettoyé, sens fr/en', async () => {
   const env = makeEnv({ replies: ['Traduction : « Les investisseurs ont versé des milliards. »', 'Investors poured billions.'] });
   assert.equal(await env.x.translate('Investors poured billions.', { to: 'fr' }), 'Les investisseurs ont versé des milliards.');

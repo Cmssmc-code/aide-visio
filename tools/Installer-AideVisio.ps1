@@ -13,7 +13,7 @@
   Adresse de l'app (par défaut la version publique).
 
 .PARAMETER Uninstall
-  Supprime les raccourcis et le dossier %LOCALAPPDATA%\Aide Visio.
+  Supprime les raccourcis et l'icône (le dossier %LOCALAPPDATA%\Aide Visio seulement s'il est vide).
 
 .PARAMETER ShortcutDir
   Crée un seul raccourci dans ce dossier (au lieu du Bureau et du menu Démarrer).
@@ -25,6 +25,7 @@
   powershell -NoProfile -ExecutionPolicy Bypass -File .\Installer-AideVisio.ps1
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File .\Installer-AideVisio.ps1 -Uninstall
+#>
 [CmdletBinding()]
 param(
   [string]$Url = 'https://cmssmc-code.github.io/aide-visio/',
@@ -65,7 +66,11 @@ if ($Uninstall) {
   foreach ($item in $items) {
     if (Test-Path -LiteralPath $item) { Remove-Item -LiteralPath $item -Force; Write-Step "Supprimé : $item" }
   }
-  if (Test-Path -LiteralPath $InstallDir) { Remove-Item -LiteralPath $InstallDir -Recurse -Force; Write-Step "Supprimé : $InstallDir" }
+  # Le dossier est partagé avec « Son du PC » (son-pc.log, son-pc.json) : ne retirer que l'icône.
+  if (Test-Path -LiteralPath $IconPath) { Remove-Item -LiteralPath $IconPath -Force; Write-Step "Supprimé : $IconPath" }
+  if ((Test-Path -LiteralPath $InstallDir) -and -not (Get-ChildItem -LiteralPath $InstallDir -Force)) {
+    Remove-Item -LiteralPath $InstallDir -Force; Write-Step "Supprimé : $InstallDir"
+  }
   Write-Host "Aide Visio est désinstallé. Vos oraux blancs et réglages restent dans le navigateur (Réglages > Effacer mes données pour les supprimer)." -ForegroundColor Green
   exit 0
 }

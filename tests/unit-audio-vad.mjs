@@ -442,6 +442,19 @@ await test('échec persistant : onError après 3 essais, les suivants continuent
   assert.deepEqual(out, ['y', 'z']);
 });
 
+await test('quota (429) passager : la concurrence revient à sa valeur après la pause', async () => {
+  let n = 0;
+  const out = [];
+  const q = new I.TranscriptionQueue({ transcribe: async p => { n++; if (n === 1) { const e = new Error('429'); e.status = 429; throw e; } return p; }, onResult: p => out.push(p) });
+  q.push(1);
+  while (q.concurrency !== 1) await wait(5);
+  q.pausedUntil = 0;
+  q._pump();
+  await q.drain(2000);
+  assert.deepEqual(out, [1]);
+  assert.equal(q.concurrency, 2);
+});
+
 await test('clé refusée (401) : pas de réessai', async () => {
   let n = 0;
   const errs = [];

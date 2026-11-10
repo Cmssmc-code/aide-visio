@@ -402,7 +402,8 @@
 
   // Lien d'installation des clés : #/cles?d=<base64url JSON>. Le fragment ne quitte jamais le PC ;
   // les clés sont rangées comme si on les avait collées dans Réglages, puis le lien est effacé de l'adresse.
-  async function unlockVault(code) {
+  async function unlockVault(code, opts) {
+    const silent = !!(opts && opts.silent);
     const v = S.vault;
     if (!v || !window.crypto || !crypto.subtle) throw new Error('Coffre des clés indisponible sur ce navigateur.');
     const b = (x) => Uint8Array.from(atob(x), (c) => c.charCodeAt(0));
@@ -412,30 +413,36 @@
     try { plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b(v.iv) }, key, b(v.data)); }
     catch (e) { const er = new Error('Code incorrect.'); er.code = 'BAD_CODE'; throw er; }
     const data = JSON.parse(new TextDecoder().decode(plain));
-    const patch = { rememberKeys: true, provider: 'auto' };
-    ['geminiKey', 'openaiKey', 'groqKey', 'claudeKey'].forEach((k) => { if (typeof data[k] === 'string' && data[k]) patch[k] = data[k]; });
-    S.store.setSettings(patch);
+    // Réouverture silencieuse : seules les clés, sans toucher aux choix de l'utilisateur (mémorisation, fournisseur).
+    const patch = silent ? {} : { rememberKeys: true, provider: 'auto' };
+    let n = 0;
+    ['geminiKey', 'openaiKey', 'groqKey', 'claudeKey'].forEach((k) => { if (typeof data[k] === 'string' && data[k]) { patch[k] = data[k]; n++; } });
+    if (Object.keys(patch).length) S.store.setSettings(patch);
     try { localStorage.setItem('aidevisio.vaultCode', String(code).trim().toLowerCase()); } catch (e) {  }
-    return Object.keys(patch).length - 2;
+    return n;
   }
 
+  // Coffre déjà ouvert sur cet appareil mais clés absentes (effacées ou coffre renouvelé) : on rouvre en silence.
+  // Rien si l'utilisateur a choisi de ne pas garder les clés sur ce PC.
+  function reopenVault() {
+    const st = settings();
+    if (st.rememberKeys === false) return;
+    let saved = '';
+    try { saved = localStorage.getItem('aidevisio.vaultCode') || ''; } catch (e) {  }
+    if (saved && !st.geminiKey && !st.openaiKey && !st.groqKey) unlockVault(saved, { silent: true }).catch(() => {});
+  }
+
+  // Renvoie true si l'adresse était un lien #/cles (pris en charge, adresse remplacée).
   function absorbKeyLink() {
     const c = /^#\/cles\?code=([A-Za-z0-9-]+)/.exec(location.hash || '');
     if (c) {
       history.replaceState(null, '', location.pathname + location.search + '#/');
       unlockVault(c[1]).then(() => { toast('Clés IA installées sur cet appareil.', 'ok'); route(true); })
         .catch((e) => toast(e.code === 'BAD_CODE' ? 'Code des clés incorrect : rien n’a été changé.' : errMsg(e), 'warn'));
-      return;
+      return true;
     }
     const m = /^#\/cles\?d=([A-Za-z0-9_-]+)/.exec(location.hash || '');
-    if (!m) {
-      // Coffre déjà ouvert sur cet appareil mais clés absentes (effacées ou coffre renouvelé) : on rouvre en silence.
-      const st = settings();
-      let saved = '';
-      try { saved = localStorage.getItem('aidevisio.vaultCode') || ''; } catch (e) {  }
-      if (saved && !st.geminiKey && !st.openaiKey && !st.groqKey) unlockVault(saved).catch(() => {});
-      return;
-    }
+    if (!m) return false;
     history.replaceState(null, '', location.pathname + location.search + '#/settings');
     try {
       const b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
@@ -449,9 +456,12 @@
       console.error('[aidevisio] lien des clés', e);
       toast('Lien des clés illisible : rien n’a été changé.', 'warn');
     }
+    return true;
   }
 
   async function route(force) {
+    // Lien des clés reçu application ouverte (hashchange, launchQueue) : on l'absorbe avant de lire l'adresse.
+    if (/^#\/cles\?/.test(location.hash || '')) absorbKeyLink();
     const target = parseHash();
     const hash = location.hash || '#/';
     const seq = ++routeSeq;
@@ -534,15 +544,6 @@
     reportError(errMsg(r));
   });
 
-  function showStorageWarning() {
-    const b = document.createElement('div');
-    b.className = 'banner storage-banner card';
-    b.setAttribute('role', 'alert');
-    b.innerHTML = `<span class="tile tile-orange">${icon('warning')}</span><div class="grow"><b>Stockage bloqué sur ce navigateur</b><small>Vos oraux blancs et vos réglages ne seront pas conservés après fermeture. Exportez les bilans à garder.</small></div>`;
-    const view = document.getElementById('view');
-    if (view && view.parentNode) view.parentNode.insertBefore(b, view);
-  }
-
   async function boot() {
     applyTheme();
     hydrateIcons(document);
@@ -557,7 +558,7 @@
       S.bus.on('settings:changed', () => { applyTheme(); });
       S.bus.on('ai:keyerror', (x) => {
         if (/^#\/(settings|diag)/.test(location.hash)) return;
-        const name = x && x.provider === 'claude' ? 'Claude' : 'Gemini';
+        const name = ({ claude: 'Claude', groq: 'Groq', openai: 'OpenAI' })[x && x.provider] || 'Gemini';
         toast(`Clé ${name} refusée : vérifiez-la dans les Réglages.`, 'err', { action: { label: 'Réglages', onClick: () => S.app.go('#/settings') }, duration: 9000 });
       });
     }
@@ -577,8 +578,7 @@
       return;
     }
     applyTheme();
-    if (S.store.backend === 'memory') showStorageWarning();
-    absorbKeyLink();
+    if (!absorbKeyLink()) reopenVault();
     booted = true;
     window.addEventListener('hashchange', () => route(false));
     await route(true);
@@ -592,7 +592,6 @@
         });
       }
     } catch (e) {  }
-    try { if (navigator.storage && navigator.storage.persisted) navigator.storage.persisted().then((p) => { if (!p && navigator.storage.persist) navigator.storage.persist().catch(() => {}); }).catch(() => {}); } catch (e) {  }
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

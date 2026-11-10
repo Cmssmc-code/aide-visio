@@ -50,6 +50,8 @@ import androidx.webkit.WebViewFeature;
 
 import com.google.androidbrowserhelper.trusted.TwaLauncher;
 
+import org.json.JSONObject;
+
 import java.io.OutputStream;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -191,7 +193,36 @@ public class WebFallbackActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         String url = intent.getStringExtra(EXTRA_URL);
-        if (webView != null && isAppUrl(url) && !isAppUrl(webView.getUrl())) webView.loadUrl(url);
+        if (webView == null || !isAppUrl(url)) return;
+        String current = webView.getUrl();
+        if (!isAppUrl(current)) {
+            webView.loadUrl(url);
+            return;
+        }
+        // Simple ouverture de l'icône : on garde la page en cours.
+        if (sameUrl(url, launchUrl) || sameUrl(url, current)) return;
+        String target = withoutFragment(url);
+        String fragment = Uri.parse(url).getFragment();
+        if (target.equals(withoutFragment(current)) && fragment != null && !fragment.isEmpty()) {
+            // Seul le fragment change : navigation par ancre, sans rechargement (hashchange).
+            webView.evaluateJavascript("location.hash=" + JSONObject.quote("#" + fragment), null);
+        } else {
+            webView.loadUrl(url);
+        }
+    }
+
+    private static String withoutFragment(String url) {
+        int i = url.indexOf('#');
+        String base = i >= 0 ? url.substring(0, i) : url;
+        return base.endsWith("/") ? base.substring(0, base.length() - 1) : base;
+    }
+
+    private static boolean sameUrl(String a, String b) {
+        if (a == null || b == null) return false;
+        String fa = Uri.parse(a).getFragment(), fb = Uri.parse(b).getFragment();
+        fa = fa == null || fa.equals("/") ? "" : fa;
+        fb = fb == null || fb.equals("/") ? "" : fb;
+        return withoutFragment(a).equals(withoutFragment(b)) && fa.equals(fb);
     }
 
     @Override
@@ -321,6 +352,8 @@ public class WebFallbackActivity extends Activity {
             root.removeView(view);
             view.destroy();
             if (view == webView) webView = null;
+            // Les verrous d'écran du JS sont perdus avec le moteur de rendu.
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             if (createWebView()) {
                 webView.loadUrl(isAppUrl(url) ? url : launchUrl);
             } else {
@@ -603,7 +636,8 @@ public class WebFallbackActivity extends Activity {
 
     private void showOffline() {
         if (webView == null) return;
-        String html = "<!doctype html><html lang=\"fr\"><head><meta charset=\"utf-8\">"
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        String html ="<!doctype html><html lang=\"fr\"><head><meta charset=\"utf-8\">"
                 + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
                 + "<style>:root{color-scheme:light dark}"
                 + "body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;"

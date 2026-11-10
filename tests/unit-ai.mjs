@@ -364,6 +364,39 @@ test('réponse tronquée (MAX_TOKENS) → relance avec un budget plus grand, tex
   assert.equal(env2.calls.length, 2);
 });
 
+test('réponse tronquée puis relance en 500 → on garde la 1re réponse (tronquée)', async () => {
+  const env = makeEnv({ geminiKey: 'g-key' });
+  let n = 0;
+  env.handler = () => {
+    n++;
+    if (n === 1) return bytesResponse(gEvent('**Presque complet, il manque juste la fin de la phrase', { finishReason: 'MAX_TOKENS' }));
+    return err(500, 'Internal error');
+  };
+  const r = await env.ai.generate({ prompt: 'Q', stream: true, maxCandidates: 1 });
+  assert.equal(r.truncated, true);
+  assert.equal(r.partial, true);
+  assert.equal(r.text, '**Presque complet, il manque juste la fin de la phrase');
+  assert.equal(env.calls.length, 2, 'une seule relance, pas de bascule');
+});
+
+test('Whisper : clé Groq refusée (401) mémorisée, aperçu sans repli Gemini', async () => {
+  const isWhisper = c => c.url.endsWith('/audio/transcriptions');
+  const env = makeEnv({ groqKey: 'gsk-bad', geminiKey: 'g-key' });
+  env.handler = (c) => isWhisper(c) ? err(401, 'Invalid API Key') : gJson('Hello there');
+  const wav = new Blob([new Uint8Array(64)], { type: 'audio/wav' });
+  assert.equal(env.ai.canPeek(), true);
+  await assert.rejects(env.ai.transcribe(wav, { peek: true, timeoutMs: 5000 }), e => e.code === 'KEY');
+  assert.equal(gen(env).length, 0, 'aperçu : aucun appel Gemini');
+  assert.ok(env.events.some(e => e.type === 'ai:keyerror' && e.provider === 'groq'));
+  assert.equal(env.ai.canPeek(), false, 'plus d\'aperçu avec une clé refusée');
+  const before = env.calls.filter(isWhisper).length;
+  const t = await env.ai.transcribe(wav, {});
+  assert.equal(t.provider, 'gemini');
+  assert.equal(env.calls.filter(isWhisper).length, before, 'Whisper sauté tant que la clé ne change pas');
+  env.settings.groqKey = 'gsk-new';
+  assert.equal(env.ai.canPeek(), true, 'nouvelle clé : aperçu de nouveau possible');
+});
+
 test('400 API_KEY_INVALID (Gemini) traité comme une clé refusée', async () => {
   const env = makeEnv({ geminiKey: 'bad', claudeKey: 'c-key' });
   env.handler = (c) => isGemini(c)

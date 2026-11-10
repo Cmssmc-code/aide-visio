@@ -265,6 +265,9 @@
   /* Question en haut, sous-titres juste dessous (au plus près de la caméra), mots-clés en bas. */
   .ex-call .lv-stage .lv-a { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-start; padding-top: 4px; }
   .ex-call .lv-stage .lv-ans { max-width: 40em; }
+  /* Le plein écran garde sa mise en page propre (sinon écrasée par les deux règles ci-dessus) */
+  .ex-call .lv-stage:fullscreen { padding: 3vh 6vw 3vh; gap: 2.2vh; }
+  .ex-call .lv-stage:fullscreen .lv-ans { max-width: 34em; }
   .ex-call .lv-stage > .lv-start { margin: auto 0; gap: 14px; }
   .ex-call .lv-stage > .lv-empty { flex: 1 1 auto; align-content: center; justify-items: center; text-align: center; }
   .ex-call .lv-stage > .lv-empty .lv-wait { max-width: 34ch; }

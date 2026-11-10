@@ -366,9 +366,11 @@ small { font-size: 13px; }
     background: var(--glass-strong);
     border: 1px solid var(--glass-stroke);
     box-shadow: var(--shadow-lg);
+    max-width: calc(100vw - 16px);
   }
+  /* Écran étroit : les onglets rétrécissent au lieu de déborder */
   .tabbar a {
-    min-width: 88px; height: 54px; gap: 4px;
+    flex: 0 1 auto; min-width: min(88px, 22vw); padding: 0 8px; height: 54px; gap: 4px;
     font: 600 12px/1 var(--font);
     color: var(--text-2);
     transition: background-color .22s var(--spring), color .18s, transform .18s var(--spring);
@@ -836,7 +838,7 @@ body { background: var(--bg); }
 .ex-count, .ex-count[data-state="today"], .ex-count[data-state="now"] { background: var(--surface); box-shadow: var(--shadow-sm); }
 .ex-count-big { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--text); }
 .ex-draw-card { background: var(--surface); }
-.ex-jury-ai { background: var(--surface); border-color: var(--surface-stroke); }
+.ex-jury-ai { background: var(--surface); border-color: var(--sep); }
 .ex-qbox { background: var(--fill); }
 .ex-fill { background: var(--accent-fill); }
 

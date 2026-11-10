@@ -63,6 +63,7 @@ def engine_without_devices():
     eng.caps, eng.caps_lock = {}, threading.Lock()
     eng.last_in = {"them": 0.0, "me": 0.0}
     eng.stop_evt = threading.Event()
+    eng.flush_evt = threading.Event()
     while not eng.tr.ready():
         time.sleep(0.2)
     threading.Thread(target=eng._loop, daemon=True).start()
@@ -113,6 +114,18 @@ first = next((at for at, m in ev if m["type"] == "final" and m["who"] == "them")
 delay = (first - t_end1) if first else 99
 check("phrase finale moins de 2 s après la fin de la parole", delay < 2.0, f"{delay:.2f} s")
 print(f"        (délai mesuré : {delay:.2f} s)")
+
+print("\nPause au milieu d'une phrase (le son du PC continue : silence)")
+ev.clear()
+play(eng, [("them", q1[: q1.size // 2])], rate)
+eng.paused = True
+play(eng, [("them", np.zeros(rate * 3 // 2, dtype=np.int16))], rate)
+check("pause : la phrase en cours est terminée", eng.seg["them"].cur is None)
+deadline = time.time() + 30
+while not any(m["who"] == "them" for m in finals(ev)) and time.time() < deadline:
+    time.sleep(0.2)
+check("pause : la phrase dite avant la pause est transcrite", any(m["who"] == "them" for m in finals(ev)), repr(finals(ev)))
+eng.paused = False
 
 
 print("\nProtocole WebSocket (port de test, aucune capture ouverte)")

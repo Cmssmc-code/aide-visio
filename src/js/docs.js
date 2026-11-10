@@ -733,7 +733,7 @@
   function nodeToText(root) {
     let out = '';
     const trailingNl = () => { let k = 0; for (let i = out.length - 1; i >= 0 && k < 2; i--) { const c = out[i]; if (c === '\n') k++; else if (c !== ' ' && c !== '\t') break; } return k; };
-    const nl = (n) => { if (!out) return; const have = trailingNl(); if (have < n) out = out.replace(/[ \t]+$/, '') + '\n'.repeat(n - have); };
+    const nl = (n) => { if (!out) return; const have = trailingNl(); if (have < n) { let j = out.length; while (j > 0 && (out[j - 1] === ' ' || out[j - 1] === '\t')) j--; out = out.slice(0, j) + '\n'.repeat(n - have); } };
     const walk = (node, pre) => {
       if (node.nodeType === 3) {
         let s = node.nodeValue || '';
@@ -802,7 +802,8 @@
   function htmlCharset(u8) {
     const head = ascii(u8, 0, 4096);
     const m = /<meta[^>]+charset\s*=\s*["']?\s*([\w-]+)/i.exec(head);
-    return m ? m[1].toLowerCase() : null;
+    // Une étiquette UTF-16 lisible en ASCII est forcément fausse (spécification HTML).
+    return m && !/^utf-?16/i.test(m[1]) ? m[1].toLowerCase() : null;
   }
 
   const EXTRA_PRINTABLE = new Set([0x2018, 0x2019, 0x201c, 0x201d, 0x2013, 0x2014, 0x2026, 0x20ac, 0x2022, 0x0152, 0x0153, 0x00ab, 0x00bb]);
@@ -977,18 +978,30 @@
     const pages = [];
     const deadline = Date.now() + config.pdfTotalMs;
     let partial = false;
+    let truncated = false;
+    let total = 0;
     try {
       for (let p = 1; p <= doc.numPages; p++) {
         if (Date.now() > deadline) { partial = true; break; }
-        const page = await withTimeout(doc.getPage(p), config.timeoutMs, 'PDF_TIMEOUT');
-        const tc = await withTimeout(page.getTextContent(), config.timeoutMs, 'PDF_TIMEOUT');
+        let page, tc;
+        try {
+          page = await withTimeout(doc.getPage(p), config.timeoutMs, 'PDF_TIMEOUT');
+          tc = await withTimeout(page.getTextContent(), config.timeoutMs, 'PDF_TIMEOUT');
+        } catch (e) {
+          // Page bloquée : garder ce qui est déjà lu (le worker est sans doute figé).
+          if (e && e.code === 'PDF_TIMEOUT' && pages.length > 0) { partial = true; break; }
+          throw e;
+        }
         pages.push(pdfItemsToText(tc.items || []));
         try { page.cleanup(); } catch (err) {  }
+        total += pages[pages.length - 1].length;
+        // Au-delà, clean() tronquerait de toute façon.
+        if (total > config.maxChars * 1.5 && p < doc.numPages) { truncated = true; break; }
       }
     } finally {
       try { task.destroy(); } catch (err) {  }
     }
-    return { text: pages.join('\n\n'), numPages: doc.numPages, pagesRead: pages.length, partial };
+    return { text: pages.join('\n\n'), numPages: doc.numPages, pagesRead: pages.length, partial, truncated };
   }
 
   function aiReady() {
@@ -1102,10 +1115,10 @@
     throw fail('UNSUPPORTED', 'Archive ZIP : décompressez-la puis déposez les documents un par un.');
   }
 
-  async function extractPdf(blob, name) {
+  async function extractPdf(blob, name, u8) {
     let res = null, pdfErr = null;
     try {
-      res = await pdfToText(blob);
+      res = await pdfToText(u8 || blob);
     } catch (e) {
       if (e && e.code === 'ENCRYPTED') throw e;
       pdfErr = e;
@@ -1160,7 +1173,7 @@
     let res;
     try {
       switch (type.kind) {
-        case 'pdf': res = await extractPdf(file instanceof Blob ? file : new Blob([u8], { type: 'application/pdf' }), name); break;
+        case 'pdf': res = await extractPdf(file instanceof Blob ? file : new Blob([u8], { type: 'application/pdf' }), name, u8); break;
         case 'zip': res = await extractZip(u8, name, ext); break;
         case 'fodt': res = { text: odfXmlToText(decodeText(u8)), method: 'odt' }; break;
         case 'rtf': res = { text: rtfToText(decoder('windows-1252').decode(u8)), method: 'rtf' }; break;

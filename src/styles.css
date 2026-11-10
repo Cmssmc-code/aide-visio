@@ -834,7 +834,6 @@ button.list-row:active, a.list-row:active { background: var(--fill); }
 [data-theme="light"] .pip-body { background: linear-gradient(180deg, #f7f8fc, #eef0f7); }
 [data-theme="dark"] .pip-body { background: linear-gradient(180deg, #121318, #060608); }
 
-.storage-banner { margin: 0 0 14px; }
 
 @media (max-width: 999px) and (min-width: 641px) {
 

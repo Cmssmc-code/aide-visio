@@ -475,6 +475,7 @@
     constructor(o) {
       this.run = o.transcribe;
       this.concurrency = o.concurrency || 2;
+      this.baseConcurrency = this.concurrency;
       this.retries = o.retries != null ? o.retries : 2;
       this.retryDelays = o.retryDelays || [800, 2000];
       this.timeoutMs = o.timeoutMs || 30000;
@@ -573,7 +574,7 @@
       this.active--;
       if (this.aborted) return;
       if (quota) { this._quota(it, err); this._pump(); this._changed(); return; }
-      if (!err && this.quotaHits && this.pausedUntil < now()) { this.quotaHits = 0; }
+      if (!err && this.quotaHits && this.pausedUntil < now()) { this.quotaHits = 0; this.concurrency = this.baseConcurrency; }
       it.state = 'done'; it.text = text; it.error = err;
       this._flush();
       this._pump();
@@ -936,28 +937,35 @@ registerProcessor('aidevisio-tap', AideVisioTap);
     const gestures = ['pointerdown', 'keydown'];
     if (hasDoc) gestures.forEach(g => document.addEventListener(g, wake, true));
     const wakeTimer = setInterval(wake, 2000);
-    const feed = (e) => {
+    // Un rééchantillonneur par connexion : le périphérique (et sa fréquence) peut changer à la reconnexion.
+    const makeFeed = (rs) => (e) => {
       if (typeof e.data === 'string') return;
       const s = new Int16Array(e.data), f = new Float32Array(s.length);
       for (let k = 0; k < s.length; k++) f[k] = s[k] / 32768;
-      node.port.postMessage(f, [f.buffer]);
+      const out = rs ? rs.process(f) : f;
+      node.port.postMessage(out, [out.buffer]);
     };
-    const attach = (w) => {
+    let stream = null;
+    const attach = (w, rs) => {
       ws = w;
-      ws.onmessage = feed;
-      ws.onclose = () => { if (stopped) return; if (!lost) { lost = true; info('them', 'PC_AUDIO_LOST', 'warn'); } retry = setTimeout(reconnect, 2000); };
+      ws.onmessage = makeFeed(rs || null);
+      ws.onclose = () => { if (stopped || ws !== w) return; if (!lost) { lost = true; info('them', 'PC_AUDIO_LOST', 'warn'); } clearTimeout(retry); retry = setTimeout(reconnect, 2000); };
+      // Socket fermé pendant l'initialisation (onclose retiré par openPcSocket) : l'événement est perdu.
+      if (w.readyState >= 2) w.onclose();
     };
     const reconnect = async () => {
       if (stopped) return;
       try {
         const r = await openPcSocket(url, 2500);
         if (stopped) { try { r.ws.close(); } catch (e) {  } return; }
-        attach(r.ws);
+        const rs = r.head.rate !== ctx.sampleRate ? new Resampler(r.head.rate, ctx.sampleRate) : null;
+        if (stream) stream.pcDevice = r.head.device || stream.pcDevice;
         if (lost) { lost = false; info('them', 'PC_AUDIO_BACK', 'info'); }
-      } catch (e) { if (!stopped) retry = setTimeout(reconnect, 2000); }
+        attach(r.ws, rs);
+      } catch (e) { if (!stopped) { clearTimeout(retry); retry = setTimeout(reconnect, 2000); } }
     };
     attach(ws);
-    const stream = dest.stream;
+    stream = dest.stream;
     const track = stream.getAudioTracks()[0];
     const stopTrack = track.stop.bind(track);
     track.stop = () => {
@@ -984,15 +992,17 @@ registerProcessor('aidevisio-tap', AideVisioTap);
     }
     open(timeoutMs = 4000) {
       return new Promise((resolve, reject) => {
-        let settled = false, loading = false;
+        let settled = false, loading = false, loadTimer = null;
+        this.opening = true;
         const done = (err) => {
           if (settled) return;
-          settled = true; clearTimeout(timer);
+          settled = true; this.opening = false; clearTimeout(timer); clearTimeout(loadTimer);
           if (err) { this.closed = true; try { if (this.ws) this.ws.close(); } catch (e) {  } reject(err); } else resolve();
         };
         const timer = setTimeout(() => done(audioError('PC_AUDIO_OFF', new Error(loading ? 'modèle trop long à charger' : 'aucune réponse'))), timeoutMs);
         this.connect((m) => {
-          if (m.type === 'info' && m.code === 'MODEL_LOADING' && !loading) { loading = true; clearTimeout(timer); setTimeout(() => done(audioError('PC_AUDIO_OFF', new Error('modèle trop long à charger'))), 60000); }
+          if (m.type === 'info' && m.code === 'MODEL_LOADING' && !loading) { loading = true; clearTimeout(timer); loadTimer = setTimeout(() => done(audioError('PC_AUDIO_OFF', new Error('modèle trop long à charger'))), 60000); }
+          if (m.type === 'info' && m.code === 'MODEL_FAILED') { const e = audioError('PC_AUDIO_OFF', new Error(String(m.message || 'modèle de transcription impossible à charger'))); if (m.message) e.message = String(m.message); done(e); }
           if (m.type === 'ready') done(null);
         }, () => done(audioError('PC_AUDIO_OFF', new Error('connexion refusée'))));
       });
@@ -1018,7 +1028,8 @@ registerProcessor('aidevisio-tap', AideVisioTap);
       ws.onclose = () => {
         if (this.ws === ws) this.ws = null;
         if (this.closed) return;
-        if (!opened && onFail) { onFail(new Error('fermé')); return; }
+        // Tant que open() attend 'ready', toute fermeture est un échec du démarrage.
+        if (onFail && (!opened || this.opening)) { onFail(new Error('fermé')); return; }
         if (!this.lost) { this.lost = true; this.ready = false; info('them', 'PC_AUDIO_LOST', 'warn'); }
         this.schedule();
       };
@@ -1288,6 +1299,7 @@ registerProcessor('aidevisio-tap', AideVisioTap);
       } else if (!this.waitVisible) this.spawn();
     }
     pause() {
+      if (this.fatal) return;
       this.paused = true;
       clearTimeout(this.restartTimer); this.restartTimer = null; this.restartAt = 0;
       const rec = this.rec;
@@ -1295,6 +1307,7 @@ registerProcessor('aidevisio-tap', AideVisioTap);
       this.ch.setState('paused');
     }
     resume() {
+      if (this.fatal) return;
       this.paused = false; this.backoff = 250;
       if (!this.rec) { this.ch.setState('starting'); this.spawn(); }
       else this.ch.setState('listening');
@@ -1381,7 +1394,7 @@ registerProcessor('aidevisio-tap', AideVisioTap);
     }
     onText(p, text) {
       this.fails = 0;
-      if (this.ch.state === 'error' || (this.ch.state === 'restarting' && !this.queue.quotaWaitMs)) this.ch.setState(this.ch.s.paused ? 'paused' : 'listening');
+      if (!this.ch.recovering && this.ch.stream && (this.ch.state === 'error' || (this.ch.state === 'restarting' && !this.queue.quotaWaitMs))) this.ch.setState(this.ch.s.paused ? 'paused' : 'listening');
       const clean = String(text || '').replace(/\s+/g, ' ').trim();
       if (clean) this.ch.s.final(this.ch, clean, p.t, { source: 'cloud', durMs: p.durMs });
       this.idleInterim();
@@ -1391,7 +1404,7 @@ registerProcessor('aidevisio-tap', AideVisioTap);
       if (e && e.code === 'ABORTED') return;
       if (isAuthError(e)) {
         this.park(p);
-        if (!this.keyBroken) { this.keyBroken = true; this.ch.setState('error', { code: e.code === 'NO_KEY' ? 'NO_KEY' : 'KEY_ERROR' }); }
+        if (!this.keyBroken) { this.keyBroken = true; this.keyCode = e.code === 'NO_KEY' ? 'NO_KEY' : 'KEY_ERROR'; this.ch.setState('error', { code: this.keyCode }); }
         return;
       }
       this.fails++;
@@ -1419,7 +1432,14 @@ registerProcessor('aidevisio-tap', AideVisioTap);
     }
     tick() {  }
     pause() { if (this.ch.vad) this.ch.vad.flush(); this.ch.setState('paused'); }
-    resume() { if (this.ch.vad) this.ch.vad.reset(true); this.ch.setState('listening'); }
+    resume() {
+      if (this.ch.vad) this.ch.vad.reset(true);
+      // Ne pas masquer une erreur de clé ou une perte de micro encore en cours.
+      if (this.keyBroken) { this.ch.setState('error', { code: this.keyCode || 'KEY_ERROR' }); return; }
+      if (this.ch.recovering) { this.ch.setState('restarting', { code: 'MIC_LOST' }); return; }
+      if (!this.ch.stream) { this.ch.setState('error', { code: 'MIC_NOT_FOUND' }); return; }
+      this.ch.setState(this.ch.s.ctxRunning() ? 'listening' : 'starting');
+    }
     stop() { clearInterval(this.peekTimer); if (this.ch.vad) this.ch.vad.flush(); }
   }
 
@@ -1533,8 +1553,9 @@ registerProcessor('aidevisio-tap', AideVisioTap);
       for (let i = 0; i < 20 && !this.s.stopped && !this.ended; i++) {
         await sleep(i === 0 ? 300 : 1500);
         if (this.s.stopped) break;
+        let st = null;
         try {
-          const st = await getMic(Object.assign({}, this.micOpts, { deviceId: null }));
+          st = await getMic(Object.assign({}, this.micOpts, { deviceId: null }));
           if (this.s.stopped) { stopStream(st); break; }
           this.attachStream(st);
           if (this.vad) this.vad.reset(false);
@@ -1545,6 +1566,8 @@ registerProcessor('aidevisio-tap', AideVisioTap);
           this.recovering = false;
           return;
         } catch (e) {
+          // attachStream a pu échouer après avoir pris le flux : le fermer avant l'essai suivant.
+          if (this.stream === st && st) this.detachStream(true); else if (st) stopStream(st);
           if (e && e.code === 'MIC_DENIED') break;
         }
       }
@@ -1907,9 +1930,12 @@ registerProcessor('aidevisio-tap', AideVisioTap);
       this.cleanups.forEach(f => { try { f(); } catch (e) {  } });
       this.cleanups = [];
       if (this.ctx) { const c = this.ctx; this.ctx = null; try { await withTimeout(c.close(), 1500); } catch (e) {  } }
+      // Les événements n'ont pas d'id de session : se taire si une autre session a pris la main.
+      const superseded = () => !!current && current !== this;
       for (const ch of this.channels) {
-        ch.setState('stopped');
         ch.level = 0;
+        if (superseded()) continue;
+        ch.setState('stopped');
         emit('level', { who: ch.who, rms: 0, raw: 0, peak: 0 });
       }
       const queues = this.channels.filter(c => c.engineKind === 'cloud' && c.engine).map(c => c.engine.queue);
@@ -1917,13 +1943,14 @@ registerProcessor('aidevisio-tap', AideVisioTap);
       if (drainMs > 0 && this.channels.some(c => c.engineKind === 'webspeech')) await sleep(Math.min(700, drainMs));
       queues.forEach(q => q.abort());
       this.checkHeld(true);
-      for (const ch of this.channels) if (ch.interimShown || ch.engineKind === 'webspeech') emit('interim', { who: ch.who, text: '' });
+      if (!superseded()) for (const ch of this.channels) if (ch.interimShown || ch.engineKind === 'webspeech') emit('interim', { who: ch.who, text: '' });
       this.draining = false;
       draining.delete(this);
     }
     abortDrain() {
       this.channels.forEach(c => { if (c.engineKind === 'cloud' && c.engine) c.engine.queue.abort(); });
       this.heldMe = [];
+      if (this.link && this.link.drainWait) { const f = this.link.drainWait; this.link.drainWait = null; f(); }
       this.draining = false;
       draining.delete(this);
     }

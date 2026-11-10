@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { deflateRawSync, constants as zc } from 'node:zlib';
 import { randomBytes } from 'node:crypto';
 import vm from 'node:vm';
+import { findChrome } from '../tools/chrome-path.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const FIX = join(ROOT, 'tests', 'fixtures');
@@ -79,7 +80,9 @@ function serve() {
 function chromePath() {
   const cands = [process.env.CHROME_PATH,
     process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'ms-playwright', 'chromium-1234', 'chrome-win64', 'chrome.exe')];
-  return cands.find((p) => p && existsSync(p));
+  const found = cands.find((p) => p && existsSync(p));
+  if (found) return found;
+  try { return findChrome(); } catch (e) { return null; }
 }
 
 async function runPage(browser, url, label) {

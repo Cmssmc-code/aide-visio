@@ -29,7 +29,7 @@
   }
   function fmtDur(ms) {
     if (!ms || ms < 0) return '—';
-    const m = Math.floor(ms / 60000), s = Math.round((ms % 60000) / 1000);
+    const t = Math.round(ms / 1000), m = Math.floor(t / 60), s = t % 60;
     return m ? (s ? `${m} min ${pad2(s)}` : `${m} min`) : `${s} s`;
   }
   function fmtDate(iso, withTime) {
@@ -345,7 +345,7 @@
     const d = (a, b) => (a ? Math.max(0, (b || Date.now()) - a) : 0);
     return {
       prepMs: d(s.prep.startedAt, s.prep.endedAt || s.expose.startedAt),
-      exposeMs: d(s.expose.startedAt, s.expose.endedAt || s.interview.startedAt),
+      exposeMs: d(s.expose.startedAt, s.expose.endedAt || (s.phase !== 'expose' ? s.interview.startedAt : null)),
       interviewMs: d(s.interview.startedAt, s.interview.endedAt)
     };
   }
@@ -439,7 +439,7 @@
     });
   }
   function stopSpeak() { try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {  } }
-  const sayBtn = (text, cls) => (text ? `<button type="button" class="icon-btn icon-btn-sm ex-say ${cls || ''}" data-say="${esc(text)}" aria-label="Écouter : ${esc(text).slice(0, 80)}" title="Écouter (voix anglaise)">${icon('speaker')}</button>` : '');
+  const sayBtn = (text, cls) => (text ? `<button type="button" class="icon-btn icon-btn-sm ex-say ${cls || ''}" data-say="${esc(text)}" aria-label="Écouter : ${esc(str(text).slice(0, 80))}" title="Écouter (voix anglaise)">${icon('speaker')}</button>` : '');
   document.addEventListener('click', (e) => {
     const b = e.target.closest && e.target.closest('[data-say]');
     if (!b) return;
@@ -451,7 +451,7 @@
   function createRecognizer(o) {
     const Ctor = SR();
     if (!Ctor) return null;
-    let rec = null, active = false, timer = 0, backoff = 250, finals = '';
+    let rec = null, active = false, timer = 0, backoff = 250, finals = '', lastInterim = '';
     const join = (a, b) => [a, b].map((x) => str(x).trim()).filter(Boolean).join(' ');
     function schedule() { clearTimeout(timer); timer = setTimeout(spawn, backoff); backoff = Math.min(backoff * 2, 4000); }
     function spawn() {
@@ -471,7 +471,8 @@
           if (res.isFinal) finals = join(finals, tx); else interim += tx;
         }
         backoff = 250;
-        o.onText(finals, interim.trim());
+        lastInterim = interim.trim();
+        o.onText(finals, lastInterim);
       };
       r.onerror = (e) => {
         if (rec !== r) return;
@@ -485,8 +486,15 @@
       try { r.start(); } catch (err) { if (active) schedule(); }
     }
     return {
-      start(initial) { active = true; finals = str(initial).trim(); backoff = 250; spawn(); },
-      stop() { active = false; clearTimeout(timer); const r = rec; rec = null; if (r) { try { r.stop(); } catch (e) {  } } return finals; },
+      start(initial) { active = true; finals = str(initial).trim(); lastInterim = ''; backoff = 250; spawn(); },
+      stop() {
+        active = false; clearTimeout(timer); const r = rec; rec = null;
+        if (r) { try { r.stop(); } catch (e) {  } }
+        // Le final envoyé à l'arrêt est ignoré : on garde l'interim en cours.
+        if (lastInterim) finals = join(finals, lastInterim);
+        lastInterim = '';
+        return finals;
+      },
       text() { return finals; }
     };
   }
@@ -694,6 +702,15 @@
       <div data-b="preview"></div>
     </div>`);
     const setState = (t, busy) => { $('[data-b="state"]', body).innerHTML = (busy ? '<span class="spinner spinner-xs"></span> ' : '') + esc(t); };
+    // Nouveau texte : l'aperçu analysé ne correspond plus.
+    function reset() {
+      if (!st.subject) return;
+      st.subject = null;
+      $('[data-b="preview"]', body).innerHTML = '';
+      const sp = st.btn && st.btn.querySelector('span'); if (sp) sp.textContent = 'Analyser';
+      setState('Texte modifié : cliquez sur « Analyser ».');
+    }
+    $('[data-f="text"]', body).addEventListener('input', reset);
     async function takeFile(f) {
       if (!f) return;
       st.file = f;
@@ -702,6 +719,7 @@
       try {
         const r = await S.docs.extract(f, f.name);
         $('[data-f="text"]', body).value = str(r && r.text).trim();
+        reset();
         setState(`« ${f.name} » lu (${words(r.text)} mots). Cliquez sur « Analyser ».`);
         if (r && r.warning) toast(r.warning, 'warn');
       } catch (e) { setState(errMsg(e)); toast(errMsg(e), 'err'); }
@@ -744,6 +762,7 @@
             st.subject = s;
             $('[data-b="preview"]', body).innerHTML = previewHTML(s);
             setState('Vérifiez le titre et la question, puis enregistrez.');
+            st.btn = ctx.button;
             const sp = ctx.button.querySelector('span'); if (sp) sp.textContent = 'Enregistrer et utiliser';
             return false;
           }
@@ -979,7 +998,7 @@
       try { ws = new WebSocket('ws://127.0.0.1:47800/transcription'); } catch (e) { end('off'); return; }
       ws.onmessage = (e) => {
         let m = null; try { m = JSON.parse(e.data); } catch (x) { return; }
-        if (m && (m.type === 'ready' || (m.type === 'info' && m.code === 'MODEL_LOADING'))) end('ok');
+        if (m && (m.type === 'ready' || (m.type === 'info' && (m.code === 'MODEL_LOADING' || m.code === 'MODEL_FAILED')))) end('ok');
       };
       ws.onopen = () => setTimeout(() => end('ok'), 1200);
       ws.onerror = () => end('off');
@@ -1043,8 +1062,10 @@
           A.on = false; A.state = 'off';
           return;
         }
-        A.on = true; A.state = 'listening';
-        toast(split() ? 'Écoute du son de l’appel lancée.' : 'Écoute du micro lancée.', 'ok');
+        A.on = true;
+        // Une erreur survenue pendant le démarrage n'est pas écrasée : on montre le toast retenu.
+        if (A.state === 'error') toast(A.error, 'err', { duration: 9000 });
+        else { A.state = 'listening'; toast(split() ? 'Écoute du son de l’appel lancée.' : 'Écoute du micro lancée.', 'ok'); }
         C.wantsWake = true; keepAwake(true);
       } catch (e) {
         unsub();
@@ -1089,12 +1110,13 @@
     const sel = A.preset || (A.pc === 'ok' ? 'pc-interne' : 'haut-parleur');
     const primary = A.on ? 'btn-danger' : o.quiet ? '' : 'btn-primary';
     const blocked = !A.on && o.blocked;
-    const stLabel = blocked ? o.blocked : A.starting ? 'Démarrage…' : A.on ? (o.onLabel || 'J’écoute l’élève (en-GB)') : A.state === 'error' ? 'Écoute en erreur' : 'Écoute arrêtée';
+    const onErr = A.on && A.state === 'error';
+    const stLabel = blocked ? o.blocked : A.starting ? 'Démarrage…' : onErr ? (A.error || 'Écoute en erreur') : A.on ? (o.onLabel || 'J’écoute l’élève (en-GB)') : A.state === 'error' ? 'Écoute en erreur' : 'Écoute arrêtée';
     return `<div class="ex-listen ${A.on ? 'on' : ''}">
 <div class="ex-src"${sources.length < 2 ? ' hidden' : ''} role="radiogroup" aria-label="Source du son">${sources.map((x) => `<button type="button" class="ex-src-opt${sel === x.id ? ' on' : ''}" role="radio" aria-checked="${sel === x.id}" data-src="${x.id}"${A.on || A.starting ? ' disabled' : ''}>
         <span class="ex-src-ic">${icon(x.ic)}</span><span class="ex-src-t"><b>${esc(x.label)}${x.rec ? ' <span class="pill pill-xs pill-ok">Recommandé</span>' : ''}</b><small>${esc(x.sub)}</small></span></button>`).join('')}</div>
       <div class="ex-listen-bar">
-        <span class="ex-live-dot ${A.on ? 'on' : A.state === 'error' ? 'err' : ''}" aria-hidden="true"></span><span class="grow small" role="status" data-b="listen-status">${esc(stLabel)}</span>
+        <span class="ex-live-dot ${onErr ? 'err' : A.on ? 'on' : A.state === 'error' ? 'err' : ''}" aria-hidden="true"></span><span class="grow small" role="status" data-b="listen-status">${esc(stLabel)}</span>
         <button type="button" class="btn btn-sm ${blocked ? '' : primary}" data-act="${A.on ? 'listen-stop' : 'listen-start'}"${A.starting || blocked ? ' disabled' : ''}>${icon(A.on ? 'stop' : 'mic')}<span>${A.on ? 'Arrêter l’écoute' : esc(o.startLabel || 'Écouter l’élève')}</span></button>
       </div>
     </div>`;
@@ -1103,8 +1125,20 @@
   function normEval(e) {
     e = e && typeof e === 'object' ? e : {};
     const src = arr(e.criteria);
+    // Deux passes : id/libellé d'abord, puis repli par position sur les entrées encore libres.
+    const used = new Set();
+    const picked = CRITERIA.map((c) => {
+      const f = src.find((x) => x && !used.has(x) && x.id === c.id) || src.find((x) => x && !used.has(x) && norm(x.label) === norm(c.label));
+      if (f) used.add(f);
+      return f;
+    });
     const criteria = CRITERIA.map((c, i) => {
-      const f = src.find((x) => x && x.id === c.id) || src.find((x) => x && norm(x.label) === norm(c.label)) || src[i] || {};
+      let f = picked[i];
+      if (!f) {
+        f = src[i] && !used.has(src[i]) ? src[i] : src.find((x) => x && !used.has(x));
+        if (f) used.add(f);
+      }
+      f = f || {};
       const sc = Number(String(f.score == null ? '' : f.score).replace(',', '.'));
       return { id: c.id, label: c.label, max: c.max, score: isFinite(sc) ? clamp(round1(sc), 0, c.max) : 0, comment: str(f.comment) };
     });
@@ -1331,7 +1365,7 @@
     try {
       const r = await S.examAI.evaluate({
         subject: s.subject, expose: exposeText(s), interview: arr(s.interview.turns).map((t) => ({ who: t.who, text: t.text })),
-        durations: durations(s), juryNotes: s.expose.juryNotes || '', checklist: Object.assign({}, s.expose.checklist),
+        durations: durations(s), juryNotes: s.expose.juryNotes || '', checklist: Object.assign({}, s.expose.checklist), checklistAuto: Object.assign({}, s.expose.checklistAuto),
         interviewOnly: s.kind === 'solo' && !s.expose.startedAt && !exposeText(s), kind: s.kind, signal: ctrl.signal
       });
       if (!C.alive) return;
@@ -1362,6 +1396,7 @@
       return true;
     }
     if (act === 'manual') {
+      if (C.evalCtrl) { C.evalCtrl.abort(); C.evalCtrl = null; }
       s.evaluation = normEval({ manual: true, criteria: CRITERIA.map((c) => ({ id: c.id, score: Math.round(c.max * 0.5 * 2) / 2 })), errors: s.expose.errors });
       C.saveNow(); C.paint(); toast('Grille prête : ajustez chaque critère.', 'ok'); return true;
     }
@@ -1377,10 +1412,15 @@
 
   function baseController(root, s) {
     const C = { root, s, alive: true, saveT: 0, reached: phaseIndex(s.phase) };
-    C.saveNow = () => { clearTimeout(C.saveT); C.saveT = 0; store.save(s); };
+    C.saveNow = () => { clearTimeout(C.saveT); C.saveT = 0; if (C.deleted) return; store.save(s); };
     C.saveSoon = () => { clearTimeout(C.saveT); C.saveT = setTimeout(C.saveNow, 1200); };
     C.setPhase = (p) => {
       const n = Date.now();
+      // En reculant, le chrono de l'étape quittée s'arrête aussi (il pourra reprendre via stepTo).
+      if (phaseIndex(p) < phaseIndex(s.phase) && ['prep', 'expose', 'interview'].includes(s.phase)) {
+        const q = s[s.phase];
+        if (q && q.startedAt && !q.endedAt) q.endedAt = n;
+      }
       if (p !== 'prep' && s.prep.startedAt && !s.prep.endedAt) s.prep.endedAt = n;
       if ((p === 'interview' || p === 'review') && s.expose.startedAt && !s.expose.endedAt) s.expose.endedAt = n;
       if (p === 'review' && s.interview.startedAt && !s.interview.endedAt) s.interview.endedAt = n;
@@ -1404,19 +1444,27 @@
       if (o.before) await o.before(step);
       if (!C.alive) return false;
       C.setPhase(step);
-      const ph = s[step];
-      if (o.resume && to < from && (step === 'expose' || step === 'interview') && ph && ph.startedAt && ph.endedAt) {
-        const ok = await confirmSheet({ title: 'Reprendre le chrono ?', text: `Le chrono de « ${label} » était arrêté à ${fmtClock(ph.endedAt - ph.startedAt)}. Il peut repartir de là.`, okLabel: 'Reprendre le chrono', cancelLabel: 'Laisser arrêté' });
-        if (ok && C.alive) { ph.startedAt += Date.now() - ph.endedAt; ph.endedAt = null; C.saveNow(); C.paint(); }
-      }
+      if (o.resume) await C.offerResume(step, label);
       return true;
+    };
+    // Étape revisitée dont le chrono a été arrêté : proposer de le relancer.
+    C.offerResume = async (step, label) => {
+      const ph = s[step];
+      if (!(step === 'expose' || step === 'interview') || !ph || !ph.startedAt || !ph.endedAt) return;
+      const ok = await confirmSheet({ title: 'Reprendre le chrono ?', text: `Le chrono de « ${label} » était arrêté à ${fmtClock(ph.endedAt - ph.startedAt)}. Il peut repartir de là.`, okLabel: 'Reprendre le chrono', cancelLabel: 'Laisser arrêté' });
+      if (ok && C.alive && s.phase === step && ph.endedAt) { ph.startedAt += Date.now() - ph.endedAt; ph.endedAt = null; C.saveNow(); C.paint(); }
     };
     C.checkGap = async () => {
       const cur = s.phase === 'prep' ? s.prep : (s.phase === 'expose' || s.phase === 'interview') ? s[s.phase] : null;
       const seen = Number(s.lastSeenAt) || 0;
       const gap = seen ? Date.now() - seen : 0;
       if (!cur || !cur.startedAt || cur.endedAt || gap < 2 * 60000) { s.lastSeenAt = Date.now(); return; }
-      const ok = await confirmSheet({ title: 'Séance interrompue', text: `La séance s’est arrêtée il y a ${fmtDur(gap)}, pendant l’étape « ${phaseLabel(s)} » (${fmtClock(seen - cur.startedAt)} écoulées). Reprendre le chrono là où il s’était arrêté ?`, okLabel: 'Reprendre le chrono', cancelLabel: 'Clore l’étape' });
+      // Pas d'alarmes pendant ce choix : le temps écoulé va changer.
+      C.gapPending = true;
+      let ok;
+      try {
+        ok = await confirmSheet({ title: 'Séance interrompue', text: `La séance s’est arrêtée il y a ${fmtDur(gap)}, pendant l’étape « ${phaseLabel(s)} » (${fmtClock(seen - cur.startedAt)} écoulées). Reprendre le chrono là où il s’était arrêté ?`, okLabel: 'Reprendre le chrono', cancelLabel: 'Clore l’étape' });
+      } finally { C.gapPending = false; }
       if (!C.alive) return;
       if (ok) cur.startedAt += Date.now() - seen;
       else cur.endedAt = seen;
@@ -1961,8 +2009,11 @@
         else if (m === 'teams') teamsEdit();
         else if (m === 'keys') sheet({ title: 'Raccourcis clavier', body: `<div class="ex-keys"><p><span class="kbd">Espace</span> entretien : marquer la question comme posée, puis passer à la suivante</p><p><span class="kbd">N</span> aller aux notes du jury</p><p><span class="kbd">L</span> lire la question à voix haute</p></div>`, actions: [{ label: 'OK', kind: 'primary' }] });
         else if (m === 'delete' && await confirmSheet({ title: 'Supprimer cette séance ?', text: 'La transcription, les notes et le bilan seront effacés.', okLabel: 'Supprimer', danger: true })) {
+          // Marquée supprimée avant l'arrêt : un résultat tardif ne doit plus réenregistrer la séance.
+          C.deleted = true; C.alive = false;
+          await L.stop({ drainMs: 0 });
           clearTimeout(C.saveT); C.saveT = 0;
-          await L.stop({ drainMs: 0 }); C.alive = false; C.deleted = true; store.remove(s.id); toast('Séance supprimée.', 'ok'); go('#/');
+          store.remove(s.id); toast('Séance supprimée.', 'ok'); go('#/');
         }
       });
     }
@@ -2017,7 +2068,7 @@
           C.saveNow(); C.paint(); toast('Chrono relancé.', 'ok');
         });
       }
-      else if (act === 'to-expose') C.setPhase('expose');
+      else if (act === 'to-expose') { C.setPhase('expose'); C.offerResume('expose', 'Exposé'); }
       else if (act === 'expose-start') {
         s.expose.startedAt = Date.now(); s.expose.endedAt = null; C.saveNow(); b.remove(); paintClock(C); toast('Exposé lancé : 15 minutes.', 'ok');
         if (!L.A.on) L.start();
@@ -2029,7 +2080,7 @@
         const ms = durations(s).exposeMs;
         const short = s.expose.startedAt && ms < 10 * 60000;
         (short ? confirmSheet({ title: 'Exposé trop court', text: `L’exposé n’a duré que ${fmtDur(ms)} (minimum 10 minutes, sinon c’est pénalisé). Passer quand même à l’entretien ?`, okLabel: 'Passer à l’entretien', cancelLabel: 'Continuer l’exposé' }) : Promise.resolve(true))
-          .then((ok) => { if (ok && C.alive) C.setPhase('interview'); });
+          .then((ok) => { if (ok && C.alive) { C.setPhase('interview'); C.offerResume('interview', 'Entretien'); } });
       }
       else if (act === 'interview-start') { s.interview.startedAt = Date.now(); C.saveNow(); b.remove(); paintClock(C); toast('Entretien lancé : 15 minutes.', 'ok'); }
       else if (act === 'mark-asked') markAsked();
@@ -2068,7 +2119,7 @@
       if (!C.alive) return;
       C.seen();
       paintClock(C);
-      checkAlarms(C);
+      if (!C.gapPending) checkAlarms(C);
       if (s.phase === 'expose' && !C.notes.busy && C.notes.newChars >= 80 && Date.now() - C.notes.lastAt >= 35000 && aiReady()) runLiveNotes(false);
     });
 
@@ -2109,6 +2160,8 @@
   }
 
   function shareSubject(subject) {
+    // Appli Android : pas de seconde fenêtre possible, on copie le sujet à la place.
+    if (/AideVisioAndroid/.test(navigator.userAgent)) { copyText(subjectPlain(subject), 'Sujet'); return; }
     const url = location.href.split('#')[0] + '#/sujet/' + encodeURIComponent(subject.id);
     const w = window.open(url, 'aidevisio-sujet', 'popup=yes,width=980,height=900');
     if (w) { try { w.focus(); } catch (e) {  } toast('Sujet ouvert : dans Teams ou Meet, « Partager » puis choisissez cette fenêtre.', 'ok', { duration: 7000 }); }
@@ -2303,7 +2356,8 @@
     function exposeOnText(finals) {
       s.expose.transcript = finals ? [{ t: Date.now() - s.expose.startedAt, text: finals }] : [];
       const wc = $('[data-b="rec-wc"]', root); if (wc) wc.textContent = finals ? `· ${words(finals)} mots captés` : '';
-      C.saveSoon();
+      // Pas de report sans fin pendant que l'élève parle : le minuteur armé sauvera le dernier texte.
+      if (!C.saveT) C.saveSoon();
     }
 
     function keyBadHTML() {
@@ -2422,17 +2476,24 @@
       C.saveSoon();
       paintQA();
       C.say(`Question ${arr(s.interview.asked).length + 1}`);
+      C.qaResumeMic = false;
       await speakQuestion(q, {});
     }
     async function speakQuestion(q, o) {
       const qa = C.qa;
+      // Jeton : une lecture interrompue par une nouvelle (Répéter, Plus lentement) ne relance pas le micro.
+      const tok = (C.qaSpeakSeq = (C.qaSpeakSeq || 0) + 1);
       const wasListening = C.listening;
       const kept = wasListening ? (stopRec() || qa.answer) : qa.answer;
       qa.answer = kept;
+      C.qaResumeMic = C.qaResumeMic || wasListening;
       if (wasListening) paintQA();
       await speakEn(q.en, o);
+      if (tok !== C.qaSpeakSeq) return;
+      const resume = C.qaResumeMic;
+      C.qaResumeMic = false;
       if (!C.alive || s.phase !== 'interview' || qa.state !== 'answer' || qa.q !== q || qa.busy) return;
-      if (SR() && (wasListening || (!prefs().typeAnswers && !str(qa.answer)))) { startRec(qa.answer, (finals) => { qa.answer = finals; }); paintQA(); }
+      if (SR() && (resume || (!prefs().typeAnswers && !str(qa.answer)))) { startRec(qa.answer, (finals) => { qa.answer = finals; }); paintQA(); }
     }
     async function qaDone() {
       const qa = C.qa;
@@ -2472,7 +2533,7 @@
       const st = e.target.closest('[data-step]');
       if (st && !st.disabled) {
         C.stepTo(st.dataset.step, {
-          steps: SOLO_STEPS,
+          steps: SOLO_STEPS, resume: true,
           before: () => {
             if (C.ctrl) C.ctrl.abort();
             stopSpeak();
@@ -2490,7 +2551,7 @@
       const act = b.dataset.act;
       if (reviewClicks(C, $('[data-b="main"]', root), act)) return;
       if (act === 'prep-start') { s.prep.startedAt = Date.now(); C.saveNow(); C.paint(); chime('soft'); }
-      else if (act === 'to-expose') C.setPhase('expose');
+      else if (act === 'to-expose') { C.setPhase('expose'); C.offerResume('expose', 'Exposé'); }
       else if (act === 'expose-start') {
         s.expose.startedAt = Date.now(); s.expose.endedAt = null; s.expose.transcript = [];
         if (SR()) startRec('', exposeOnText);
@@ -2514,6 +2575,7 @@
         const ta = $('[data-f="tx"]', root);
         if (ta) s.expose.transcript = ta.value.trim() ? [{ t: 0, text: ta.value.trim() }] : [];
         C.setPhase('interview');
+        C.offerResume('interview', 'Jury IA');
       }
       else if (act === 'qa-next') qaNext();
       else if (act === 'qa-done') qaDone();
@@ -2529,12 +2591,14 @@
       else if (act === 'qa-mic') { setPrefs({ typeAnswers: false }); const ta = $('[data-f="answer"]', root); startRec(ta ? ta.value : '', (f) => { C.qa.answer = f; }); paintQA(); }
       else if (act === 'to-review') { if (C.ctrl) C.ctrl.abort(); stopSpeak(); stopRec(); C.qa.state = 'idle'; C.setPhase('review'); }
     });
+    // Réponse tapée : gardée dans qa.answer pour survivre aux repeints.
+    root.addEventListener('input', (e) => { if (e.target.matches && e.target.matches('[data-f="answer"]')) C.qa.answer = e.target.value; });
 
     const offTick = onTick(() => {
       if (!C.alive) return;
       C.seen();
       paintClock(C, true);
-      checkAlarms(C, true);
+      if (!C.gapPending) checkAlarms(C, true);
     });
     C.paint();
     C.checkGap();
@@ -2594,7 +2658,7 @@
     if (tab === 'themes') {
       const th = arr(f.themes);
       if (!th.length) return none('Le vocabulaire des thèmes');
-      return th.map((t) => `<details class="card card-pad ex-fgroup ex-theme-card" style="--hue:${THEME_HUE[t.id] || 214}" data-search-group>
+      return th.map((t) => `<details class="card card-pad ex-fgroup ex-theme-card" style="--hue:${THEME_HUE[t.id] || 214}" data-search-group data-search-head="${sv(t.id, t.fr, t.title)}">
         <summary><span class="ex-theme"><b>${esc(t.id)}</b>${esc(t.fr || '')}</span><span class="h3" lang="en">${esc(t.title)}</span><span class="small muted">${arr(t.vocab).length} mots</span></summary>
         <ul class="ex-pairs ex-pairs-grid">${arr(t.vocab).map(pairRow).join('')}</ul>
         ${arr(t.facts).length ? `<h4 class="ex-sub">Notions</h4><ul class="ex-list" lang="en">${t.facts.map((x) => `<li data-search="${sv(x)}">${esc(x)}</li>`).join('')}</ul>` : ''}
@@ -2654,8 +2718,17 @@
     </div>`;
     const offTabs = {};
     const hitsIn = (id, q) => {
-      if (!offTabs[id]) { const d = document.createElement('div'); d.innerHTML = ficheBody(id); offTabs[id] = $$('[data-search]', d).map((el) => el.dataset.search); }
-      return offTabs[id].filter((x) => x.includes(q)).length;
+      if (!offTabs[id]) {
+        const d = document.createElement('div'); d.innerHTML = ficheBody(id);
+        const key = (el) => el.dataset.search || el.dataset.searchHead || '';
+        // Chaque entrée garde les textes de ses ancêtres : on ne compte que la correspondance la plus externe.
+        offTabs[id] = $$('[data-search], [data-search-head]', d).map((el) => {
+          const anc = [];
+          for (let p = el.parentElement && el.parentElement.closest('[data-search], [data-search-head]'); p; p = p.parentElement && p.parentElement.closest('[data-search], [data-search-head]')) anc.push(key(p));
+          return { s: key(el), anc };
+        });
+      }
+      return offTabs[id].filter((x) => x.s.includes(q) && !x.anc.some((a) => a.includes(q))).length;
     };
     const body = $('[data-b="body"]', root);
     body.innerHTML = ficheBody(tab);
@@ -2673,6 +2746,13 @@
       });
       $$('.ex-fgroup, details.ex-fgroup', body).forEach((g) => {
         const items = $$('[data-search]', g);
+        // Nom du thème trouvé : toute la carte reste visible.
+        if (q && g.dataset.searchHead && g.dataset.searchHead.includes(q)) {
+          items.forEach((x) => { x.hidden = false; });
+          g.hidden = false; any = true;
+          if (g.tagName === 'DETAILS') g.open = true;
+          return;
+        }
         if (!items.length) return;
         const vis = items.some((x) => !x.hidden);
         g.hidden = !vis;
@@ -3167,6 +3247,7 @@
         const text = str(r && r.text).trim();
         if (!text) throw new Error('Réponse vide de l’IA — réessayez.');
         item.text = text;
+        if (r.partial) R.warn = 'Réponse coupée — relancez si besoin.';
         item.lines = arr(r.lines).filter((l) => l && str(l.en).trim()).map((l) => ({ en: str(l.en).trim(), fr: str(l.fr).trim() })).slice(0, 12);
         if (!item.fr && str(r.qFr).trim()) item.fr = str(r.qFr).trim();
         item.keyWords = arr(r.keyWords).map(str).map((k) => k.trim()).filter(Boolean).slice(0, 8);
@@ -3226,6 +3307,7 @@
     }
     async function endCall() {
       if (L.A.on || L.A.starting) await L.stop({ drainMs: 0 });
+      if (R.busy && R.item && !R.item.text && !R.item.error) R.item.error = 'Réponse interrompue (fin de l’appel).';
       if (R.ctrl) R.ctrl.abort();
       Object.assign(R, { req: null, ctrl: null, busy: false, partial: '' });
       call.endedAt = Date.now();
@@ -3256,7 +3338,7 @@
       const left = Math.max(0, Math.round((sc.availLeft || 0) + ((sc.availWidth || FLOAT_W) - FLOAT_W) / 2));
       const top = Math.max(0, Math.round(sc.availTop || 0));
       try { w = window.open('', 'aidevisio-appel', `popup=yes,width=${FLOAT_W},height=${FLOAT_H + 40},left=${left},top=${top}`); } catch (e) { w = null; }
-      if (!w) { toast('Fenêtre flottante bloquée : autorisez les fenêtres pop-up pour ce site, ou utilisez Chrome ou Edge récent.', 'warn', { duration: 9000 }); return; }
+      if (!w) { toast(/AideVisioAndroid/.test(navigator.userAgent) ? 'Fenêtre flottante indisponible dans l’appli Android : utilisez Chrome ou Edge sur un PC.' : 'Fenêtre flottante bloquée : autorisez les fenêtres pop-up pour ce site, ou utilisez Chrome ou Edge récent.', 'warn', { duration: 9000 }); return; }
       try {
         w.document.open();
         w.document.write('<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Aide Visio · appel</title></head><body></body></html>');
@@ -3387,6 +3469,7 @@
         clearTimeout(fitT);
         if (offInfo) { try { offInfo(); } catch (e) {  } }
         if (isFull()) document.exitFullscreen().catch(() => {});
+        if (R.busy && R.item && !R.item.text && !R.item.error) R.item.error = 'Réponse interrompue (fin de l’appel).';
         if (R.ctrl) R.ctrl.abort();
         closeFloat();
         C.saveNow();

@@ -3,7 +3,7 @@ setlocal
 set "HERE=%~dp0"
 where pythonw >nul 2>nul
 if errorlevel 1 (
-  echo Python est introuvable. Installez Python 3 puis : pip install pyaudiowpatch numpy websockets faster-whisper
+  echo Python est introuvable. Installez Python 3 puis : pip install pyaudiowpatch numpy websockets faster-whisper psutil
   pause
   exit /b 1
 )

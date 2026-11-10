@@ -24,7 +24,7 @@ Aide Visio (mode « Appel ou visio sur ce PC (son interne) ») s'y connecte en W
 Seules les origines autorisées (site Aide Visio, localhost) peuvent se connecter : une autre page web ne peut
 ni écouter le PC ni lire les transcriptions.
 
-Dépendances : pip install pyaudiowpatch numpy websockets faster-whisper
+Dépendances : pip install pyaudiowpatch numpy websockets faster-whisper psutil
 Lancement : pythonw aidevisio_son_pc.py   (Installer-Son-du-PC.ps1 le lance à chaque ouverture de session)
 Réglages (variables d'environnement) : AIDE_VISIO_MODELE = auto | base | small | tiny (auto par défaut),
 AIDE_VISIO_SON_PC_PORT (47800).
@@ -121,27 +121,36 @@ class Capture:
         self.device = ""
         self.rate = 0
         self.channels = 1
-        self._open()
         self.stop_evt = threading.Event()
+        self._open()
         threading.Thread(target=self._watch, name=f"suivi-{kind}", daemon=True).start()
 
     def _open(self):
         with self.lock:
+            # close() pose stop_evt avant de prendre le verrou : aucune réouverture après la fermeture.
+            if self.stop_evt.is_set():
+                return
             self._close_stream()
-            self.pa = pa.PyAudio()
-            self.name, dev = pick_device(self.pa, self.kind)
-            self.device = dev["name"]
-            self.channels = max(1, min(2, int(dev["maxInputChannels"])))
-            self.rate = int(dev["defaultSampleRate"])
-            self.stream = self.pa.open(format=pa.paInt16, channels=self.channels, rate=self.rate, input=True,
-                                       input_device_index=dev["index"],
-                                       frames_per_buffer=self.rate * FRAME_MS // 1000, stream_callback=self._cb)
+            try:
+                self.pa = pa.PyAudio()
+                self.name, dev = pick_device(self.pa, self.kind)
+                self.device = dev["name"]
+                self.channels = max(1, min(2, int(dev["maxInputChannels"])))
+                self.rate = int(dev["defaultSampleRate"])
+                self.stream = self.pa.open(format=pa.paInt16, channels=self.channels, rate=self.rate, input=True,
+                                           input_device_index=dev["index"],
+                                           frames_per_buffer=self.rate * FRAME_MS // 1000, stream_callback=self._cb)
+            except Exception:
+                self._close_stream()
+                raise
             log.info("capture %s : %s · %d Hz · %d canal(aux)", self.kind, self.device, self.rate, self.channels)
 
     def _watch(self):
         while not self.stop_evt.wait(1.5):
             try:
                 name = default_device_name(self.kind)
+                if self.stop_evt.is_set():
+                    break
                 dead = self.stream is None or not self.stream.is_active()
                 if name != self.name or dead:
                     log.info("%s : %r → %r%s", self.kind, self.name, name, " (flux arrêté)" if dead else "")
@@ -373,8 +382,8 @@ class Transcriber:
     """Fil unique de transcription, file prioritaire : phrases du jury, puis les vôtres, puis le texte en direct.
 
     Phrase finie : API en ligne la plus rapide si une clé est fournie (Groq, sinon OpenAI), sinon Whisper local.
-    Whisper local « auto » : « base » tout de suite ; « small » (plus précis) chargé en arrière-plan sur secteur
-    et utilisé tant qu'il transcrit en moins de 0,6 × la durée de la phrase, sinon retour à « base ».
+    Whisper local « auto » : « base ». Avec AIDE_VISIO_MODELE=small, « base » est aussi chargé et sert pendant
+    5 min dès que « small » transcrit en plus de 0,6 × la durée de la phrase.
     Texte en direct (phrase en cours du jury) : toujours en local, jamais devant une phrase finie.
     """
 
@@ -384,6 +393,7 @@ class Transcriber:
         self.seq = itertools.count()
         self.cv = threading.Condition()
         self.models = {}
+        self.failed = None
         self.slow_until = 0.0
         self.lang = "fr"
         self.hint = ""
@@ -419,8 +429,15 @@ class Transcriber:
             self.models[first] = m
         except Exception:
             log.exception("chargement du modèle %s", first)
-            self.emit({"type": "info", "code": "MODEL_FAILED", "message": f"Modèle Whisper « {first} » introuvable."})
+            self.failed = f"Modèle Whisper « {first} » introuvable."
+            self.emit({"type": "info", "code": "MODEL_FAILED", "message": self.failed})
             return
+        if first == "small":
+            # Repli quand « small » est trop lent sur ce PC.
+            try:
+                self.models["base"] = self._model("base")
+            except Exception:
+                log.exception("modèle de repli base (on s'en passe)")
         if (os.cpu_count() or 4) < 16:
             return
         try:
@@ -452,8 +469,8 @@ class Transcriber:
         return bool(self.models)
 
     def current(self):
-        if "small" in self.models and time.time() >= self.slow_until and MODEL_PREF == "small":
-            return "small"
+        if MODEL_PREF == "small" and time.time() < self.slow_until and "base" in self.models:
+            return "base"
         for k in (MODEL_PREF, "base", "small", "tiny", "medium"):
             if k in self.models:
                 return k
@@ -488,9 +505,11 @@ class Transcriber:
             self.cv.notify()
             return True
 
-    def pending(self):
+    def pending(self, early=False):
+        """Phrases finales en file ou en cours (``early`` : compte aussi les transcriptions anticipées)."""
+        kinds = ("final", "early") if early else ("final",)
         with self.cv:
-            return sum(1 for j in self.q if j[2] == "final") + (1 if self.busy else 0)
+            return sum(1 for j in self.q if j[2] in kinds) + (1 if self.busy else 0)
 
     def clear(self):
         with self.cv:
@@ -598,6 +617,8 @@ class Engine:
         self.caps = {}
         self.last_in = {"them": 0.0, "me": 0.0}
         self.stop_evt = threading.Event()
+        self.flush_evt = threading.Event()
+        self.discard_evt = threading.Event()
         self.caps_lock = threading.Lock()
         threading.Thread(target=self._loop, name="moteur", daemon=True).start()
 
@@ -652,6 +673,9 @@ class Engine:
     def _loop(self):
         last_level = 0.0
         last_interim = 0.0
+        was_paused = self.paused
+        flush = getattr(self, "flush_evt", None)
+        discard_evt = getattr(self, "discard_evt", None)
         while not self.stop_evt.is_set():
             try:
                 who, a, rate, t = self.frames.get(timeout=0.1)
@@ -663,6 +687,32 @@ class Engine:
             except Exception:
                 log.exception("moteur")
             t = now_ms()
+            # Pause ou « stop » : la phrase en cours est terminée ici, dans le fil moteur (pas de course avec push).
+            paused = self.paused
+            # Dernier client parti : la phrase en cours est jetée, rien n'est transcrit après la séance.
+            discard = discard_evt is not None and discard_evt.is_set()
+            cut = discard or (paused and not was_paused) or (flush is not None and flush.is_set())
+            was_paused = paused
+            if cut:
+                for s in self.seg.values():
+                    try:
+                        if discard:
+                            s.cur, s.run = None, 0
+                        elif s.cur is not None:
+                            s.close(t)
+                        s.vad.reset()
+                        s.buf = np.zeros(0, dtype=np.float32)
+                    except Exception:
+                        log.exception("fin de phrase forcée")
+                if discard:
+                    discard_evt.clear()
+                    with self.early_lock:
+                        self.waiting.clear()
+                        self.ready = None
+                        self.early_inflight = None
+                    self.tr.clear()
+                if flush is not None:
+                    flush.clear()
             for who, s in self.seg.items():
                 if t - self.last_in[who] > 150:
                     s.idle(t)
@@ -800,6 +850,7 @@ class Boost:
     def __init__(self):
         self.lowered = {}
         self.active = False
+        self.lock = threading.Lock()
 
     def _protected(self, p, me):
         try:
@@ -815,9 +866,10 @@ class Boost:
 
     def start(self):
         cfg = boost_settings()
-        if self.active or not cfg.get("mode_oral", True):
-            return
-        self.active = True
+        with self.lock:
+            if self.active or not cfg.get("mode_oral", True):
+                return
+            self.active = True
         try:
             import psutil
         except ImportError:
@@ -852,28 +904,34 @@ class Boost:
                 prev = p.nice()
                 if prev in (psutil.IDLE_PRIORITY_CLASS,):
                     continue
-                p.nice(psutil.IDLE_PRIORITY_CLASS)
-                self.lowered[p.pid] = prev
+                # Sous le verrou : stop() ne peut pas passer entre le test et la baisse.
+                with self.lock:
+                    if not self.active:
+                        return
+                    p.nice(psutil.IDLE_PRIORITY_CLASS)
+                    self.lowered[p.pid] = prev
                 log.info("mode oral : priorité minimale pour %s (pid %d)", p.info["name"], p.pid)
             except Exception:
                 pass
 
     def stop(self):
-        if not self.active:
-            return
-        self.active = False
+        with self.lock:
+            if not self.active:
+                return
+            self.active = False
+            lowered = list(self.lowered.items())
+            self.lowered.clear()
         try:
             import psutil
         except ImportError:
             return
-        for pid, prev in self.lowered.items():
+        for pid, prev in lowered:
             try:
                 psutil.Process(pid).nice(prev)
             except Exception:
                 pass
-        if self.lowered:
-            log.info("mode oral terminé : %d priorité(s) rétablie(s)", len(self.lowered))
-        self.lowered.clear()
+        if lowered:
+            log.info("mode oral terminé : %d priorité(s) rétablie(s)", len(lowered))
         try:
             psutil.Process().nice(psutil.NORMAL_PRIORITY_CLASS)
         except Exception:
@@ -907,6 +965,10 @@ class Hub:
         log.info("transcription : client %s (%d)", origin, len(self.clients))
         try:
             while not self.engine.tr.ready():
+                if self.engine.tr.failed:
+                    await ws.send(json.dumps({"type": "info", "code": "MODEL_FAILED", "message": self.engine.tr.failed},
+                                             ensure_ascii=False))
+                    return
                 await ws.send(json.dumps({"type": "info", "code": "MODEL_LOADING", "message": "Chargement du modèle de transcription…"}))
                 await asyncio.sleep(1.0)
             await ws.send(json.dumps({"type": "ready", "model": self.engine.tr.current(), "devices": self.engine.devices()}, ensure_ascii=False))
@@ -932,7 +994,12 @@ class Hub:
                         self.engine.paused = False
                 elif kind == "stop":
                     deadline = time.time() + 6
-                    while self.engine.tr.pending() and time.time() < deadline:
+                    eng = self.engine
+                    # Termine la phrase en cours (fil moteur), puis attend aussi les phrases anticipées.
+                    eng.flush_evt.set()
+                    while eng.flush_evt.is_set() and time.time() < deadline:
+                        await asyncio.sleep(0.05)
+                    while (eng.tr.pending(early=True) or eng.waiting) and time.time() < deadline:
                         await asyncio.sleep(0.1)
                     await ws.send(json.dumps({"type": "drained"}))
         except websockets.ConnectionClosed:
@@ -942,6 +1009,7 @@ class Hub:
             self.started.discard(ws)
             log.info("transcription : client parti (%d restant)", len(self.clients))
             if not self.started and self.engine is not None:
+                self.engine.discard_evt.set()
                 self.engine.paused = True
                 self.engine.tr.clear()
                 self.cancel_close()

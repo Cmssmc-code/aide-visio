@@ -103,6 +103,11 @@
     const r = await S.docs.extract(fx('sample-cp1252.html'));
     has(r.text, 'Expérience réussie — très appréciée');
   });
+  test('HTML UTF-8 étiqueté à tort utf-16 (meta ignorée)', async () => {
+    const html = '<html><head><meta charset="utf-16"></head><body><p>Élève réussie, garçon motivé.</p></body></html>';
+    const r = await S.docs.extract(new File([new TextEncoder().encode(html)], 'faux-utf16.html', { type: 'text/html' }));
+    has(r.text, 'Élève réussie, garçon motivé.');
+  });
 
   test('TXT Windows-1252 → repli automatique', async () => {
     const r = await S.docs.extract(fx('sample-cp1252.txt'));

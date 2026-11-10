@@ -38,6 +38,7 @@
   pwsh -NoProfile -File tools\build-apk.ps1
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File tools\build-apk.ps1 -Clean -VersionCode 20001
+#>
 [CmdletBinding()]
 param(
     [string]$AppUrl = 'https://cmssmc-code.github.io/aide-visio/',

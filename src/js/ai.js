@@ -45,7 +45,7 @@
   const noThinking = new Set();
   const noMinimal = new Set();
   const deadKeys = {};
-  const lastDiscoverTry = { openai: 0, gemini: 0, claude: 0, groq: 0 };
+  const lastDiscoverTry = { openai: null, gemini: null, claude: null, groq: null };
   let lastOk = null;
   let discovering = null;
 
@@ -573,7 +573,7 @@
         const c = cache[p];
         const fresh = c && c.fp === fp && Array.isArray(c.ids) && c.ids.length && (Date.now() - (c.at || 0) < config.discoverTtlMs);
         if (fresh && !opts.force) { out[p] = c.ids; continue; }
-        lastDiscoverTry[p] = Date.now();
+        lastDiscoverTry[p] = { at: Date.now(), fp };
         try {
           const ids = usable(p, p === 'openai' ? await listOpenai(k) : p === 'gemini' ? await listGemini(k) : p === 'claude' ? await listClaude(k) : await listGroq(k));
           if (ids.length) cache[p] = { at: Date.now(), fp, ids };
@@ -603,7 +603,9 @@
       if (!k) return false;
       const c = cache[p];
       const ok = c && c.fp === fingerprint(k) && (t - (c.at || 0) < config.discoverTtlMs);
-      return !ok && t - lastDiscoverTry[p] > 10 * 60 * 1000;
+      const lt = lastDiscoverTry[p];
+      const throttled = lt && lt.fp === fingerprint(k) && t - lt.at <= 10 * 60 * 1000;
+      return !ok && !throttled;
     });
     if (stale) discover().catch(() => {});
   }
@@ -811,6 +813,8 @@
 
   const whisperCalls = [];
   function whisperRecent(ms) { const cut = Date.now() - ms; while (whisperCalls.length && whisperCalls[0] < cut) whisperCalls.shift(); return whisperCalls.length; }
+  // Clé Groq refusée (401) et pas changée depuis : inutile de renvoyer l'audio à Whisper.
+  const groqKeyDead = () => !!deadKeys.groq && deadKeys.groq === fingerprint(keyOf('groq'));
   async function groqWhisper(wavBlob, hint, signal, timeoutMs, lang) {
     let lastErr = null;
     whisperCalls.push(Date.now());
@@ -831,12 +835,23 @@
         const res = await doFetch(GROQ_API + '/audio/transcriptions', { method: 'POST', headers: { Authorization: 'Bearer ' + keyOf('groq') }, body: fd }, att);
         const j = await readJSON(res, att);
         emit('ai:status', { provider: 'groq', model, ok: true, ms: Math.round(now() - t0), purpose: 'fast', error: null });
+        if (deadKeys.groq) delete deadKeys.groq;
         return { text: String(j.text || ''), model, provider: 'groq', ms: Math.round(now() - t0) };
       } catch (e) {
         if (e && e.name === 'AbortError') throw e;
         lastErr = e;
         emit('ai:status', { provider: 'groq', model, ok: false, purpose: 'fast', error: e && e.message, code: e && e.code });
-        if (e && e.code === 'KEY') break;
+        if (e && e.code === 'KEY') {
+          if (e.keyStrong) {
+            // Une seule alerte par clé refusée.
+            const fp = fingerprint(keyOf('groq'));
+            if (deadKeys.groq !== fp) {
+              deadKeys.groq = fp;
+              emit('ai:keyerror', { provider: 'groq', status: e.status, message: e.message });
+            }
+          }
+          break;
+        }
         if (e && (e.code === 'QUOTA' || e.code === 'SERVER' || e.code === 'TIMEOUT')) trip({ provider: 'groq', model }, config.breakerMs, e.code);
       } finally { att.done(); }
     }
@@ -871,6 +886,7 @@
 
   async function tryCandidate(c, o) {
     const v = { thinking: c.provider === 'gemini' && !noThinking.has(c.model), noTemperature: false, maxTokens: 0, thinkLevel: noMinimal.has(c.model) ? 'low' : '' };
+    let firstTruncated = null;
     for (let i = 0; i < 5; i++) {
       try {
         const r = await callOnce(c, o, v);
@@ -880,11 +896,18 @@
           v.bigTokens = true;
           v.maxTokens = Math.max(8192, (o.maxTokens || 1024) * 4);
           emit('ai:status', { provider: c.provider, model: c.model, ok: false, purpose: o.purpose, error: 'réponse tronquée, relance', code: 'TRUNCATED' });
+          firstTruncated = r;
           continue;
         }
         if (TRUNCATED.test(String(r.finish || ''))) r.truncated = true;
         return r;
       } catch (e) {
+        // Relance ratée : la 1re réponse sert de texte partiel ; generate() bascule et ne la rend qu'en dernier recours.
+        if (firstTruncated && !isAbort(e) && !(o.signal && o.signal.aborted)) {
+          const ft = String(firstTruncated.text || '');
+          if (e && typeof e === 'object' && !(e.partialText && e.partialText.length > ft.length)) e.partialText = ft;
+          throw e;
+        }
         if (!e || e.code !== 'BAD_REQUEST' || e.partialText) throw e;
         const d = String(e.detail || '');
         if (!v.maxTokens && /max_?(?:output_?)?tokens|maxOutputTokens/i.test(d) && (o.maxTokens || 0) > 8192) { v.maxTokens = 8192; continue; }
@@ -1157,7 +1180,7 @@
     if (partial && partial.text.trim().length >= 40) {
       return {
         text: partial.text, provider: partial.provider, model: partial.model,
-        ms: Math.round(now() - run.start), firstTokenMs: null, partial: true, finish: 'PARTIAL'
+        ms: Math.round(now() - run.start), firstTokenMs: null, partial: true, truncated: true, finish: 'PARTIAL'
       };
     }
     throw allFailed(errors);
@@ -1281,14 +1304,16 @@
     opts = opts || {};
     const hint = String(opts.hint || opts.prompt || '').replace(/\s+/g, ' ').trim().slice(0, 500);
     const lang = String(opts.lang || 'en').slice(0, 2).toLowerCase();
-    if (keyOf('groq')) {
+    if (keyOf('groq') && !(groqKeyDead() && keyOf('gemini') && !opts.peek)) {
       try {
         const w = await groqWhisper(wavBlob, hint, opts.signal, opts.timeoutMs, lang);
         return { text: cleanTranscript(w.text), model: w.model, provider: 'groq', ms: w.ms };
       } catch (e) {
-        if ((e && e.name === 'AbortError') || !keyOf('gemini')) throw e;
+        // Un aperçu n'a d'intérêt que rapide : pas de repli Gemini, qui userait son quota.
+        if ((e && e.name === 'AbortError') || opts.peek || !keyOf('gemini')) throw e;
       }
     }
+    if (opts.peek && !keyOf('groq')) throw noKeyError({ providers: ['gemini'] });
     if (!keyOf('gemini')) throw noKeyError({ providers: ['gemini'] });
     const data = await blobToBase64(wavBlob);
     const mime = (wavBlob && wavBlob.type) || 'audio/wav';
@@ -1307,7 +1332,7 @@
   }
 
   function canPeek() {
-    if (!keyOf('groq')) return false;
+    if (!keyOf('groq') || groqKeyDead()) return false;
     if (whisperRecent(60000) >= 12) return false;
     return WHISPER.some(m => { const b = breaker.get('groq:' + m); return !(b && b.until > Date.now()); });
   }
