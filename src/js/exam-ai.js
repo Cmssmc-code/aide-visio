@@ -780,6 +780,8 @@
     // Question rhétorique de l'élève : « Why? Because… ».
     if (parts.some((p, i) => i > 0 && /^because\b(?! of)/.test(p.rest) && words(parts[i - 1].rest) <= 2)) return false;
     if (parts.some(p => /[?？][\s"'”’»)\]]*$/.test(p.raw) && !Q_NOT.test(p.rest.replace(/^what (?:i|you) (?:mean|want to say|wanted to say) is /, '')))) return true;
+    // Relance d'un ou deux mots : « Explain. », « Elaborate, please. ».
+    if (parts.some(p => /[.!]$/.test(p.raw.trim()) && /^(?:please )?(?:explain|elaborate|develop|clarify|justify|be more specific)(?: (?:please|that|this|it|more|further|your (?:idea|point|answer)))*$/.test(p.rest.replace(/[.,!]/g, '').trim()))) return true;
     if (words(parts.map(p => p.rest).join(' ')) < 3) return false;
     return parts.some(p => !Q_NOT.test(p.rest) && (Q_ASK.test(p.rest) || Q_ANY.test(p.rest) || Q_TAG.test(p.rest)));
   }

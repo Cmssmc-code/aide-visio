@@ -3404,7 +3404,7 @@
         const cont = !q && role === 'jury' && base && !base.forced && !base.mine && call.answers.includes(base) && now - R.autoAt < 6000 && !NOT_CONT.test(text.trim());
         // « Répondre maintenant » puis phrase finale : la demande reste forcée.
         if (q) ask(joined, { force: !!(R.busy && R.item && R.item.forced && now - R.born < JOIN_MS) });
-        else if (cont) ask(base.question + ' ' + text, { replace: base });
+        else if (cont) ask((/^[a-z]/.test(text) ? base.question.replace(/[.?!…]+s*$/, '') : base.question) + ' ' + text, { replace: base });
       } else {
         const a = shown();
         if (a) { a.mine = (a.mine ? a.mine + ' ' : '') + text; paintHist(); }

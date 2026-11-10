@@ -1104,7 +1104,7 @@
           else trip(c, err.quotaKind === 'day' && c.provider === 'gemini' ? 30 * 60 * 1000 : err.quotaKind === 'minute' ? Math.max(60000, err.retryAfterMs || 0) : config.breakerMs, err.code);
           break;
         case 'SERVER': case 'TIMEOUT':
-          trip(c, config.breakerMs, err.code);
+          trip(c, err.code === 'TIMEOUT' ? 60000 : config.breakerMs, err.code);
           break;
         case 'NOT_FOUND':
           trip(c, config.notFoundMs, err.code);
