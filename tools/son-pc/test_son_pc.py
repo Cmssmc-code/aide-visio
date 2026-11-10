@@ -85,6 +85,13 @@ def play(eng, who_pcm, rate):
             time.sleep(d)
 
 
+def wait_for(cond, seconds):
+    """Attend qu'une condition soit vraie (PC chargé : la transcription peut prendre du temps)."""
+    deadline = time.time() + seconds
+    while not cond() and time.time() < deadline:
+        time.sleep(0.2)
+
+
 def finals(events):
     return [m for _, m in events if m["type"] == "final"]
 
@@ -100,7 +107,8 @@ time.sleep(3.0)
 play(eng, [("them", q2), ("me", (q2 * 0.4).astype(np.int16))], rate)
 time.sleep(4.0)
 play(eng, [("me", q1)], rate)
-time.sleep(5.0)
+wait_for(lambda: any(m["who"] == "me" and "culture" in m["text"].lower() for m in finals(ev)), 40)
+time.sleep(1.0)
 
 f = finals(ev)
 them = [m["text"].lower() for m in f if m["who"] == "them"]
@@ -114,6 +122,31 @@ first = next((at for at, m in ev if m["type"] == "final" and m["who"] == "them")
 delay = (first - t_end1) if first else 99
 check("phrase finale moins de 2 s après la fin de la parole", delay < 2.0, f"{delay:.2f} s")
 print(f"        (délai mesuré : {delay:.2f} s)")
+
+print("\nHaut-parleurs : réponse dite juste après la question (même phrase du micro)")
+ev.clear()
+time.sleep(1.0)
+gap = np.zeros(rate * 3 // 10, dtype=np.int16)
+play(eng, [("them", q2), ("me", np.concatenate([(q2 * 0.4).astype(np.int16), gap, q1]))], rate)
+wait_for(lambda: {"them", "me"} <= {m["who"] for m in finals(ev)}, 40)
+time.sleep(2.0)
+f = finals(ev)
+them = [m["text"].lower() for m in f if m["who"] == "them"]
+me = [m["text"].lower() for m in f if m["who"] == "me"]
+check("jury : question transcrite", any("salari" in t or "tention" in t for t in them), repr(them))
+check("étudiant : réponse gardée après l'écho", any("culture" in t for t in me), repr(me))
+check("étudiant : aucun mot du jury dans sa réponse", not any("salari" in t or "tention" in t for t in me), repr(me))
+
+print("\nFilet sur le texte : mêmes mots au même moment")
+got = []
+keep_b = eng.broadcast
+eng.broadcast = got.append
+eng.emit({"type": "final", "who": "them", "text": "Why did you choose this company?", "t0": 1000, "t1": 4000})
+eng.emit({"type": "final", "who": "me", "text": "why did you choose this company", "t0": 1300, "t1": 4400})
+eng.emit({"type": "final", "who": "me", "text": "Because I like this company a lot.", "t0": 6500, "t1": 9000})
+eng.broadcast = keep_b
+check("écho transcrit : ignoré", not any(m["who"] == "me" and m["t0"] == 1300 for m in got), repr(got))
+check("vraie réponse : gardée", any(m["who"] == "me" and m["t0"] == 6500 for m in got), repr(got))
 
 print("\nPause au milieu d'une phrase (le son du PC continue : silence)")
 ev.clear()

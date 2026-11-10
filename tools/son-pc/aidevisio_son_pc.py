@@ -72,6 +72,7 @@ def origin_ok(origin):
     return any(origin == o or origin.startswith(o + ":") for o in ORIGINS)
 
 
+WORDS = re.compile(r"[a-zà-ÿ0-9']+")
 HANDS_FREE = re.compile(r"hands-?free|mains[ -]libres|\bHFP\b|\bAG Audio\b", re.I)
 
 
@@ -598,7 +599,12 @@ class Transcriber:
 class Engine:
     """Les deux sources, leurs détecteurs de parole, la transcription et l'anti-écho, pour tous les clients."""
 
-    ECHO_RATIO = 0.6
+    # Anti-écho (haut-parleurs repris par le micro) : une image du micro est de l'écho si le son du PC parlait
+    # jusqu'à ECHO_AFTER_MS avant (retard du haut-parleur, réverbération, pauses entre les mots) ou
+    # ECHO_BEFORE_MS après (écart d'horodatage entre les deux captures).
+    ECHO_AFTER_MS = 450
+    ECHO_BEFORE_MS = 120
+    OWN_MIN_MS = 350
 
     def __init__(self, broadcast):
         self.broadcast = broadcast
@@ -662,7 +668,55 @@ class Engine:
         return out
 
     def emit(self, msg):
+        if msg.get("type") == "final" and self._echo_text(msg):
+            return
         self.broadcast(msg)
+
+    def _echo_text(self, msg):
+        """Filet anti-écho sur le texte : une phrase du micro dite en même temps qu'une phrase du son du PC et
+        faite des mêmes mots est l'écho des haut-parleurs (retard ou réverbération hors des marges du filtre)."""
+        recent = self.__dict__.setdefault("recent_them", deque(maxlen=12))
+        words = WORDS.findall(str(msg.get("text", "")).lower())
+        t0, t1 = float(msg.get("t0") or 0), float(msg.get("t1") or 0)
+        if msg.get("who") == "them":
+            recent.append((t0, t1, set(words)))
+            return False
+        if len(words) < 2:
+            return False
+        for a, b, them in list(recent):
+            if t0 <= b + 1500 and t1 >= a and sum(1 for w in words if w in them) >= 0.7 * len(words):
+                log.info("micro ignoré (mêmes mots que le son du PC au même moment) : %r", msg.get("text", "")[:80])
+                return True
+        return False
+
+    def _own_voice(self, audio, t0, t1):
+        """Phrase du micro sans les passages où le son du PC parlait (haut-parleurs repris par le micro).
+
+        Renvoie (audio, t0) ou (None, t0) s'il ne reste pas assez de parole propre au micro. Une réponse dite
+        juste après la question est donc gardée entière, sans les mots du correspondant devant.
+        """
+        n = audio.size // VAD_FRAME
+        lo, hi = t0 - self.ECHO_AFTER_MS, t1 + 2000
+        them = np.array([v for v in list(self.seg["them"].voiced) if lo <= v <= hi], dtype=np.float64)
+        if not n or not them.size:
+            return audio, t0
+        ts = t0 + 32.0 * (np.arange(n) + 1)
+        i = np.searchsorted(them, ts - self.ECHO_AFTER_MS)
+        echo = (i < them.size) & (them[np.minimum(i, them.size - 1)] <= ts + self.ECHO_BEFORE_MS)
+        keep = ~echo
+        if keep.all():
+            return audio, t0
+        # Îlots trop courts entre deux passages d'écho : restes de réverbération, pas une phrase.
+        edges = np.flatnonzero(np.diff(np.concatenate(([0], keep.astype(np.int8), [0]))))
+        for a, b in zip(edges[::2], edges[1::2]):
+            if b - a < 8:
+                keep[a:b] = False
+        mine = [v for v in list(self.seg["me"].voiced) if t0 < v <= t0 + 32.0 * n + 16]
+        own = sum(1 for v in mine if keep[min(n - 1, max(0, int(round((v - t0) / 32.0)) - 1))])
+        if own * 32.0 < self.OWN_MIN_MS:
+            return None, t0
+        first = int(np.argmax(keep))
+        return audio[:n * VAD_FRAME].reshape(n, VAD_FRAME)[keep].reshape(-1), t0 + 32.0 * first
 
     def _in(self, who, a, rate):
         try:
@@ -740,11 +794,14 @@ class Engine:
 
     def on_segment(self, who, audio, t0, t1):
         if who == "me":
-            covered = self.seg["them"].voiced_ms(t0, t1)
-            if covered >= self.ECHO_RATIO * max(1.0, t1 - t0):
-                log.info("micro ignoré (écho du son du PC : %.0f %% recouvert)", 100 * covered / max(1.0, t1 - t0))
+            own, start = self._own_voice(audio, t0, t1)
+            if own is None:
+                log.info("micro ignoré (écho du son du PC, %.1f s)", (t1 - t0) / 1000)
                 return
-            self.tr.add(who, audio, t0, t1)
+            if own.size != audio.size:
+                log.info("micro : %.1f s d'écho du son du PC retirées, %.1f s gardées",
+                         (audio.size - own.size) / SR, own.size / SR)
+            self.tr.add(who, own, start, t1)
             return
         need = int((t1 - t0) * SR / 1000) - 2 * VAD_FRAME
         with self.early_lock:

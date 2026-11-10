@@ -1020,9 +1020,18 @@
     async function start(preset) {
       if (!S.audio || !S.audio.start) { toast('Module audio indisponible' + (o.call ? '.' : ' : utilisez les notes manuelles.'), 'err'); return; }
       if (A.on || A.starting) return;
-      A.preset = preset || A.preset || (A.pc === 'ok' ? 'pc-interne' : 'haut-parleur');
+      // Source jamais choisie : « Son du PC » est recherché de nouveau (il démarre parfois après la page), et le
+      // choix automatique n'est pas enregistré : un repli sur le micro ne devient pas le réglage permanent.
+      const chosen = preset || str(prefs()[prefKey]);
+      if (!chosen && !A.mobile && A.pc !== 'ok') {
+        A.starting = true; A.cancelled = false; A.state = 'starting'; C.paintListen();
+        A.pc = await probePcProgram();
+        A.starting = false;
+        if (A.cancelled || !C.alive) { A.cancelled = false; A.state = 'off'; if (C.alive) C.paintListen(); return; }
+      }
+      A.preset = chosen || (A.pc === 'ok' ? 'pc-interne' : 'haut-parleur');
       if (A.mobile && SPLIT_SRC.includes(A.preset)) A.preset = 'haut-parleur';
-      setPrefs({ [prefKey]: A.preset });
+      if (chosen) setPrefs({ [prefKey]: A.preset });
       A.error = ''; A.errorCode = '';
       if (A.preset === 'visio-casque' && !aiReady()) {
         A.state = 'error'; A.error = NO_KEY_TAB; A.errorCode = 'NO_KEY'; C.paintListen();
