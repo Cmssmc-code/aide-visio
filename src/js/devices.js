@@ -76,7 +76,6 @@
 
   // ---------- Ouverture des flux ----------
 
-  const canChooseSpeaker = () => typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype;
 
   async function openMic(extra) {
     const m = md();
@@ -157,12 +156,11 @@
     return chimeUrl;
   }
 
-  // Joue deux fois un petit carillon sur la sortie choisie.
+  // Joue deux fois un petit carillon sur la sortie par défaut de Windows : c'est celle de la voix du jury
+  // (la synthèse vocale du navigateur ne peut pas être envoyée ailleurs).
   async function playTestSound() {
     const a = new Audio(chime());
     a.volume = 1;
-    const id = await resolve('speaker');
-    if (id && typeof a.setSinkId === 'function') await a.setSinkId(id);
     for (let i = 0; i < 2; i++) {
       a.currentTime = 0;
       await a.play();
@@ -383,7 +381,7 @@
 
   S.devices = {
     list, hasLabels, chosen, resolve, choose, permission,
-    openMic, openCamera, stop, canChooseSpeaker,
+    openMic, openCamera, stop,
     playTestSound, testMic, listenOnce,
     voices, voice, speak, canSpeak, niceVoiceName,
     explain, explainSpeech, cleanLabel

@@ -340,7 +340,6 @@
       const s2 = settings();
       const bits = [];
       if (s2.micLabel) bits.push(`Micro : ${s2.micLabel}`);
-      if (s2.speakerLabel) bits.push(`Sortie : ${s2.speakerLabel}`);
       try { const v = await D.voice(); if (v && s2.voiceURI) bits.push(`Voix : ${D.niceVoiceName(v).split(' · ')[0]}`); } catch (e) {  }
       if (!c.alive) return;
       if (bits.length) out.textContent = bits.join(' · ');
@@ -644,10 +643,9 @@
 
     async function refreshLists() {
       if (!D) return;
-      const [mic, speaker, camera] = await Promise.all([D.list('mic'), D.list('speaker'), D.list('camera')]);
+      const [mic, camera] = await Promise.all([D.list('mic'), D.list('camera')]);
       if (!c.alive) return;
       lists.mic = D.hasLabels(mic) ? mic : [];
-      lists.speaker = D.hasLabels(speaker) && D.canChooseSpeaker() ? speaker : [];
       lists.camera = D.hasLabels(camera) ? camera : [];
       const mk = (kind, label) => {
         const real = lists[kind].filter((o) => !o.isDefault);
@@ -657,7 +655,6 @@
         drawRow(byKey[kind]);
       };
       mk('mic', 'Micro utilisé');
-      mk('speaker', 'Sortie du son');
       mk('camera', 'Caméra utilisée');
     }
 
@@ -741,11 +738,10 @@
         set('speaker', { status: 'pending', detail: 'Écoutez : un petit carillon sonne deux fois…', select: byKey.speaker.select });
         try { await D.playTestSound(); } catch (e) {
           if (!c.alive) return null;
-          const gone = e && (e.name === 'NotFoundError' || e.name === 'OverconstrainedError');
           set('speaker', {
             status: 'err',
-            detail: gone ? 'La sortie choisie n’est plus disponible.' : e && e.name === 'NotAllowedError' ? 'Chrome a bloqué le son.' : 'Le son n’a pas pu être joué.',
-            advice: gone ? 'Choisissez « Par défaut de Windows » dans la liste, puis réessayez.' : 'Cliquez une fois dans la page, puis sur « Refaire ».',
+            detail: e && e.name === 'NotAllowedError' ? 'Chrome a bloqué le son.' : 'Le son n’a pas pu être joué.',
+            advice: 'Cliquez une fois dans la page, puis sur « Refaire ».',
             select: byKey.speaker.select
           });
           return null;
@@ -756,15 +752,11 @@
           status: 'err',
           detail: 'Pas de son.',
           select: byKey.speaker.select,
-          advice: `Montez le volume avec les touches du clavier et vérifiez que le son n’est pas coupé. Cliquez sur l’icône du haut-parleur dans la barre des tâches et choisissez « Onboard Speaker »${byKey.speaker.select ? ', ou choisissez une autre sortie ci-dessous' : ''}.`
+          advice: `Montez le volume avec les touches du clavier et vérifiez que le son n’est pas coupé. Cliquez sur l’icône du haut-parleur dans la barre des tâches et choisissez la bonne sortie (haut-parleurs du PC ou casque) : la voix du jury sort toujours par la sortie choisie dans Windows.`
         }));
-        if (v === 'yes') set('speaker', { status: 'ok', detail: `Le son sort bien${outName()}.`, select: byKey.speaker.select });
+        if (v === 'yes') set('speaker', { status: 'ok', detail: 'Le son sort bien.', select: byKey.speaker.select });
         return v;
       } finally { busy.speaker = false; }
-    }
-    function outName() {
-      const o = lists.speaker.find((x) => x.id === (D ? D.chosen('speaker') : ''));
-      return o && !o.isDefault ? ` (${o.label})` : '';
     }
 
     // camDone : fin de l'aperçu en cours ; camRun : promesse du test caméra en cours.
