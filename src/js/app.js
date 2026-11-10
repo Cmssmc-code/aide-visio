@@ -325,7 +325,20 @@
     const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
     if (location.protocol !== 'https:' && !local) return;
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
-      const offer = (w) => { if (w && navigator.serviceWorker.controller) showUpdateBanner(w); };
+      const born = Date.now();
+      // Mise à jour trouvée à l'ouverture, sur l'accueil : appliquée seule (rien en cours à perdre).
+      // Plus tard ou ailleurs (oral, appel) : bandeau « Recharger », jamais de rechargement surprise.
+      const offer = (w) => {
+        if (!w || !navigator.serviceWorker.controller) return;
+        const home = /^#?\/?$/.test(location.hash || '');
+        if (home && Date.now() - born < 20000) {
+          swReloadAsked = true;
+          try { w.postMessage({ type: 'SKIP_WAITING' }); w.postMessage('SKIP_WAITING'); } catch (e) {  }
+          setTimeout(() => { if (swReloadAsked) location.reload(); }, 2500);
+          return;
+        }
+        showUpdateBanner(w);
+      };
       if (reg.waiting) offer(reg.waiting);
       reg.addEventListener('updatefound', () => {
         const w = reg.installing;

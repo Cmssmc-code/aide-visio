@@ -165,25 +165,22 @@ try {
   if (replaced === swText) check('mise à jour : VERSION trouvée dans sw.js', false);
   else {
     fs.writeFileSync(swFile, replaced);
+    // Trouvée à l'ouverture, sur l'accueil : la page l'applique seule et se recharge.
+    const nav = page.waitForNavigation({ waitUntil: 'load', timeout: 20000 }).then(() => true, () => false);
+    await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r.update())).catch(() => {});
+    const reloaded = await nav;
+    check('mise à jour à l’ouverture : appliquée seule, page rechargée', reloaded);
     const upd = await page.evaluate(async (expected) => {
-      const reg = await navigator.serviceWorker.getRegistration();
-      await reg.update();
-      const t0 = Date.now();
-      while (!reg.waiting && Date.now() - t0 < 10000) await new Promise((r) => setTimeout(r, 100));
-      if (!reg.waiting) return { waiting: false };
-      const changed = new Promise((r) => navigator.serviceWorker.addEventListener('controllerchange', () => r(true), { once: true }));
-      reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-      const ok = await Promise.race([changed, new Promise((r) => setTimeout(() => r(false), 10000))]);
       let keys = [];
       for (let i = 0; i < 50; i++) {
         keys = await caches.keys();
         if (keys.filter((k) => k.startsWith('aidevisio-shell-')).length === 1) break;
         await new Promise((r) => setTimeout(r, 100));
       }
-      return { waiting: true, controllerchange: ok, keys, hasNew: keys.includes('aidevisio-shell-' + expected) };
+      const reg = await navigator.serviceWorker.getRegistration();
+      return { keys, hasNew: keys.includes('aidevisio-shell-' + expected), waiting: !!(reg && reg.waiting) };
     }, nextVersion);
-    check('mise à jour : nouvelle version en attente (waiting)', upd.waiting);
-    check('mise à jour : SKIP_WAITING → controllerchange', !!upd.controllerchange);
+    check('mise à jour : plus rien en attente', !upd.waiting);
     check('mise à jour : nouveau cache créé, ancien supprimé', !!upd.hasNew && upd.keys.filter((k) => k.startsWith('aidevisio-shell-')).length === 1, (upd.keys || []).join(', '));
   }
   if (pageErrors.length) console.log('  (erreurs JS de la page : ' + pageErrors.slice(0, 3).join(' | ') + ')');

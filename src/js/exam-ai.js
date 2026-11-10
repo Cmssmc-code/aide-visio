@@ -864,6 +864,9 @@
         cur.fr = rest; field = 'fr';
         return;
       }
+      // Ligne sans étiquette après une traduction terminée : ce sont les mots-clés écrits sans « Keywords: »
+      // (certains modèles l'oublient). Jamais collée à la traduction.
+      if (cur && field === 'fr' && /[.!?…»”"]$/.test(cur.fr.trim())) { if (!m) kw += (kw ? ' ' : '') + line; return; }
       if (cur && field) cur[field] += ' ' + line;
       else loose.push(line);
     });
@@ -898,8 +901,8 @@
       'You are the candidate\'s English coach during a TRAINING mock oral for the French accounting diploma (DSCG UE6 / DSGC UE 218, business English, CEFR level B2 expected). The candidate has studied a press article and an exam question, has given a presentation, and is now questioned by the jury.',
       'Write what the candidate can say right now to the jury: spoken English, first person, natural B2 level, ' + size + '. Each sentence 15 words maximum, one idea per sentence.',
       o.shorter
-        ? 'Sentence 1 answers the question directly in 12 words maximum, reusing the jury\'s key words (yes/no question: start with "Yes,", "No," or "Partly,"). Sentence 2 gives one short reason or example. No filler such as "That is a good question".'
-        : 'Sentence 1 answers the question directly in 12 words maximum, reusing the jury\'s key words (yes/no question: start with "Yes,", "No," or "Partly,"). Sentence 2 gives one reason. Sentence 3 gives one concrete example from the article, from the candidate\'s presentation or from the news below. Simple linking words only (because, for example, so, however). No filler such as "That is a good question".',
+        ? 'Sentence 1 answers the question directly in 12 words maximum, reusing the jury\'s key words. Only when the jury asks a yes/no question, start with "Yes,", "No," or "Partly,"; for any other question (what, why, how, which, an example) start directly with the answer. Every sentence starts with a capital letter. Sentence 2 gives one short reason or example. No filler such as "That is a good question".'
+        : 'Sentence 1 answers the question directly in 12 words maximum, reusing the jury\'s key words. Only when the jury asks a yes/no question, start with "Yes,", "No," or "Partly,"; for any other question (what, why, how, which, an example) start directly with the answer. Every sentence starts with a capital letter. Sentence 2 gives one reason. Sentence 3 gives one concrete example from the article, from the candidate\'s presentation or from the news below. Simple linking words only (because, for example, so, however). No filler such as "That is a good question".',
       'Use common words a French B2 speaker can pronounce easily: no idioms, no rare words, no long numbers.',
       'Use only facts and figures found in the article, the candidate\'s presentation or the news below; never invent a figure, a name or a date.',
       'Stay consistent with the candidate\'s presentation (same problem statement, same opinion); you may start with "As I said in my presentation," when it helps. If the jury\'s words are a follow-up ("why?", "an example?", "and for firms?"), answer it in the light of the RECENT EXCHANGE.',
