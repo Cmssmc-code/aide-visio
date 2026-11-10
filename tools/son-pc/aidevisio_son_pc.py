@@ -374,7 +374,8 @@ def cloud_transcribe(url, model, key, audio, lang, prompt):
     body += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"phrase.wav\"\r\n"
              "Content-Type: audio/wav\r\n\r\n").encode("utf-8") + wav_bytes(audio) + f"\r\n--{boundary}--\r\n".encode()
     req = urllib.request.Request(url, data=body, method="POST", headers={
-        "Authorization": f"Bearer {key}", "Content-Type": f"multipart/form-data; boundary={boundary}"})
+        "Authorization": f"Bearer {key}", "Content-Type": f"multipart/form-data; boundary={boundary}",
+        "User-Agent": "AideVisio-SonPC/1.0", "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=CLOUD_TIMEOUT) as r:
         return str(json.loads(r.read().decode("utf-8")).get("text", "")).strip()
 
@@ -406,9 +407,12 @@ class Transcriber:
         self.live_model = None
         self.live_job = None
         self.live_cv = threading.Condition()
+        self.me_q = deque()
+        self.me_cv = threading.Condition()
         threading.Thread(target=self._load, name="modeles", daemon=True).start()
         threading.Thread(target=self._run, name="whisper", daemon=True).start()
         threading.Thread(target=self._run_live, name="whisper-direct", daemon=True).start()
+        threading.Thread(target=self._run_me, name="whisper-micro", daemon=True).start()
 
     def _model(self, name, threads=None):
         from faster_whisper import WhisperModel
@@ -451,13 +455,14 @@ class Transcriber:
     def _run_live(self):
         while True:
             with self.live_cv:
-                while self.live_job is None or self.live_model is None:
+                while self.live_job is None or not (self.live_model or self.models):
                     self.live_cv.wait(0.5)
                 who, audio, t0 = self.live_job
                 self.live_job = None
             try:
                 start = time.time()
-                segs, _ = self.live_model.transcribe(
+                model = self.live_model or self.models.get("base") or self.models[self.current()]
+                segs, _ = model.transcribe(
                     audio, language=self.lang, beam_size=1, vad_filter=False, without_timestamps=True,
                     condition_on_previous_text=False, initial_prompt=self.hint or None, temperature=0.0)
                 text = " ".join(s.text.strip() for s in segs if s.text.strip() and not HALLUCINATIONS.search(s.text)).strip()
@@ -477,7 +482,17 @@ class Transcriber:
                 return k
         return None
 
+    def cloud_ready(self):
+        return any(self.keys.get(p) and time.time() >= self.cloud_off_until.get(p, 0) for p, _, _ in CLOUD)
+
     def add(self, who, audio, t0, t1):
+        # Vos phrases, transcrites en ligne, passent par leur propre fil : une question du correspondant
+        # n'attend jamais derrière elles.
+        if who == "me" and self.cloud_ready():
+            with self.me_cv:
+                self.me_q.append((who, audio, t0, t1))
+                self.me_cv.notify()
+            return
         with self.cv:
             heapq.heappush(self.q, (0 if who == "them" else 1, next(self.seq), "final", who, audio, t0, t1))
             self.cv.notify()
@@ -489,7 +504,9 @@ class Transcriber:
         (moteur : ``on_interim``), elle passe donc avant vos phrases et n'est jamais abandonnée.
         """
         if not early:
-            if self.live_model is not None:
+            # Transcription en ligne disponible : le texte en direct (local) tourne sur son propre fil, pour
+            # que la phrase finale, envoyée en ligne, ne patiente pas derrière lui.
+            if self.live_model is not None or (self.models and self.cloud_ready()):
                 with self.live_cv:
                     self.live_job = (who, audio, t0)
                     self.live_cv.notify()
@@ -516,6 +533,19 @@ class Transcriber:
         with self.cv:
             self.q.clear()
             self.interim_pending = False
+        with self.me_cv:
+            self.me_q.clear()
+
+    def _run_me(self):
+        while True:
+            with self.me_cv:
+                while not self.me_q or not self.models:
+                    self.me_cv.wait(0.5)
+                who, audio, t0, t1 = self.me_q.popleft()
+            try:
+                self._final(who, audio, t0, t1)
+            except Exception:
+                log.exception("transcription (micro)")
 
     def _run(self):
         while True:
@@ -732,7 +762,7 @@ class Engine:
         discard_evt = getattr(self, "discard_evt", None)
         while not self.stop_evt.is_set():
             try:
-                who, a, rate, t = self.frames.get(timeout=0.1)
+                who, a, rate, t = self.frames.get(timeout=0.04)
                 self.last_in[who] = t
                 if not self.paused:
                     self.seg[who].push(to_16k(a, rate), t)
