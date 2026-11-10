@@ -38,7 +38,6 @@ export const MIME = {
   '.webm': 'video/webm',
   '.mp4': 'video/mp4',
   '.zip': 'application/zip',
-  '.apk': 'application/vnd.android.package-archive',
   '.ps1': 'text/plain; charset=utf-8',
   '.cmd': 'text/plain; charset=utf-8',
 };
