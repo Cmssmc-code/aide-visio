@@ -3382,7 +3382,8 @@
     // Mots du jury qui ne prolongent pas une question (politesse, consigne).
     // Recolle deux morceaux d'une même phrase : si la suite commence en minuscule, le « ? » ou le « . »
     // posé par la pause au milieu est retiré (« What do you think? about… » → « What do you think about… »).
-    const glue = (a, b) => (/^[a-z]/.test(b) ? a.replace(/[.?!…]+\s*$/, '') : a) + ' ' + b;
+    // Suite en majuscule après un morceau sans ponctuation finale : un point est ajouté (« …is stable. Could you… »).
+    const glue = (a, b) => (/^[a-z]/.test(b) ? a.replace(/[.?!…]+\s*$/, '') : /[A-Za-z0-9]\s*$/.test(a) && /^[A-Z]/.test(b) ? a.trim() + '.' : a) + ' ' + b;
     const NOT_CONT = /^(?:ok(?:ay)?|all ?right|right|good|great|fine|yes|no|thanks?|thank you|sorry|please|well|so|take your time|go ahead|go on|i see|interesting|perfect|very good)/i;
     C.onHeard = (role, text, ev) => {
       if (!text || !C.alive) return;
