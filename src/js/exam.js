@@ -823,14 +823,14 @@
     const solo = mode === 'solo';
     const body = h(`<div class="stack">
       <div class="row">${themeChip(s.theme)}<span class="pill pill-xs">${subjectWords(s)} mots</span></div>
-      ${solo ? `<div class="ex-question"><span class="ex-question-l">Question</span><p lang="en">${esc(s.question)}</p></div><p class="small muted">« Questions du jury » : le jury IA vous interroge tout de suite, l’article reste affiché. « Oral complet » : 1 h de préparation, puis exposé et questions.</p>` : subjectHTML(s)}
+      ${solo ? `<div class="ex-question"><span class="ex-question-l">Question</span><p lang="en">${esc(s.question)}</p></div><p class="small muted">« Oral complet » : comme à l’examen, 1 h de préparation, l’exposé, puis les questions du jury. « Questions seulement » : le jury IA vous interroge tout de suite, l’article reste affiché.</p>` : subjectHTML(s)}
       ${mode === 'jury' ? `<details class="ex-details"><summary>Corrigé indicatif (jury)</summary>${corrigeHTML(s, true)}</details>` : ''}
     </div>`);
     const actions = [];
     if (custom) actions.push({ label: 'Supprimer', kind: 'danger', icon: 'trash', onClick: async () => { if (await confirmSheet({ title: 'Supprimer ce sujet ?', text: s.title, okLabel: 'Supprimer', danger: true })) { store.removeSubject(s.id); toast('Sujet supprimé.', 'ok'); S.app.refresh && S.app.refresh(); } } });
     if (solo) {
-      actions.push({ label: 'Oral complet (1 h de préparation)', kind: 'ghost', icon: 'clock', onClick: () => startFull(s) });
-      actions.push({ label: 'Questions du jury', kind: 'primary', icon: 'play', onClick: () => start(s) });
+      actions.push({ label: 'Questions seulement', kind: 'ghost', icon: 'chat', onClick: () => start(s) });
+      actions.push({ label: 'Oral complet (1 h de préparation)', kind: 'primary', icon: 'play', onClick: () => startFull(s) });
     } else actions.push({ label: mode === 'call' ? 'Choisir pour l’appel' : 'Faire passer ce sujet', kind: 'primary', icon: 'play', onClick: () => start(s) });
     sheet({ title: s.title, body, wide: true, actions });
   }
@@ -938,12 +938,12 @@
       ${solo ? `<section class="card card-pad ex-jury-ai">
         <div class="ex-jury-ai-main">
           <span class="ex-role-ic">${icon('sparkles')}</span>
-          <div><h1 class="h2">Jury IA</h1>
-          <p class="muted">Le jury vous pose 6 questions à l’oral, en anglais.${aiOk && !keyRefused() ? ' Chaque réponse est corrigée.' : ' Sans clé IA, les réponses ne sont pas corrigées.'}</p></div>
+          <div><h1 class="h2">Oral blanc</h1>
+          <p class="muted">Comme à l’examen : 1 h de préparation, votre exposé, puis les questions du jury IA, en anglais.${aiOk && !keyRefused() ? '' : ' Sans clé IA, les réponses ne sont pas corrigées.'}</p></div>
         </div>
         <div class="ex-actions-row">
-          <button type="button" class="btn btn-primary btn-lg" data-act="quick-jury">${icon('play')}<span>Commencer (sujet au hasard)</span></button>
-          <button type="button" class="btn btn-quiet" data-act="full-random">${icon('clock')}<span>Oral complet (1 h de préparation)</span></button>
+          <button type="button" class="btn btn-primary btn-lg" data-act="full-random">${icon('play')}<span>Commencer l’oral (sujet au hasard)</span></button>
+          <button type="button" class="btn btn-quiet" data-act="quick-jury">${icon('chat')}<span>Questions du jury seulement</span></button>
         </div>
       </section>
       <div class="section-head ex-pick-head"><h2 class="h2">Choisir le sujet</h2></div>` : `<div class="ex-actions-row ex-pick-row">
@@ -978,8 +978,8 @@
       if (!b) return;
       const act = b.dataset.act;
       if (act === 'draw') drawSheet(filtered(), mode, start);
-      else if (act === 'import') importSubjectSheet(solo ? startDirect : start);
-      else if (act === 'gen') generateSubjectSheet(solo ? startDirect : start);
+      else if (act === 'import') importSubjectSheet(start);
+      else if (act === 'gen') generateSubjectSheet(start);
       else if (act === 'quick-jury' || act === 'full-random') {
         const pick = pickRandom(filtered().length ? filtered() : store.subjects());
         if (!pick) { toast('Aucun sujet disponible.', 'warn'); return; }
