@@ -5,6 +5,8 @@
   const config = {
     maxBytes: 20 * MB,
     maxChars: 60000,
+    maxPdfChars: 800000,
+    longWords: 3000,
     timeoutMs: 15000,
     pdfTotalMs: 45000,
     cdn: 'https://cdn.jsdelivr.net/npm/',
@@ -995,13 +997,13 @@
         pages.push(pdfItemsToText(tc.items || []));
         try { page.cleanup(); } catch (err) {  }
         total += pages[pages.length - 1].length;
-        // Au-delà, clean() tronquerait de toute façon.
-        if (total > config.maxChars * 1.5 && p < doc.numPages) { truncated = true; break; }
+        // Long cours : toutes les pages sont gardées pour choisir le texte ; garde-fou mémoire.
+        if (total > config.maxPdfChars && p < doc.numPages) { truncated = true; break; }
       }
     } finally {
       try { task.destroy(); } catch (err) {  }
     }
-    return { text: pages.join('\n\n'), numPages: doc.numPages, pagesRead: pages.length, partial, truncated };
+    return { text: pages.join('\n\n'), pages, numPages: doc.numPages, pagesRead: pages.length, partial, truncated };
   }
 
   function aiReady() {
@@ -1115,6 +1117,40 @@
     throw fail('UNSUPPORTED', 'Archive ZIP : décompressez-la puis déposez les documents un par un.');
   }
 
+  // En-têtes et pieds de page répétés (mentions, nom de l'élève, numéros) : retirés de chaque page.
+  function stripRepeated(pages) {
+    const norm = (l) => l.toLowerCase().replace(/\d+/g, '#').replace(/\s+/g, ' ').trim();
+    const seen = new Map();
+    pages.forEach((p) => new Set(p.split('\n').map(norm)).forEach((k) => {
+      if (k) seen.set(k, (seen.get(k) || 0) + 1);
+    }));
+    const min = Math.max(3, Math.ceil(pages.length * 0.3));
+    const drop = (l) => {
+      const k = norm(l), n = seen.get(k) || 0;
+      if (!k) return false;
+      if (/^#( ?\/ ?#)?$/.test(k) || /^powered by tcpdf/.test(k)) return true;
+      if (/\(\s*[^\s()@]+@[^\s()]+\s*\)\s*$/.test(k) && k.length < 160) return true;
+      return n >= 3 && (k.length >= 12 || n >= min);
+    };
+    return pages.map((p) => p.split('\n').filter((l) => !drop(l)).join('\n').replace(/\n{3,}/g, '\n\n').trim());
+  }
+
+  // Textes d'un cours : chaque devoir (« À déposer pour correction ») ou « TEXT N° » commence un texte.
+  function findParts(pages) {
+    const START = /à déposer pour correction|^\s*text\s*(n(um)?be?r|n°|no\.?)\s*\d+/im;
+    const starts = [];
+    pages.forEach((p, i) => { if (START.test(p.slice(0, 600))) starts.push(i); });
+    return starts.map((s, k) => {
+      let e = (k + 1 < starts.length ? starts[k + 1] : pages.length) - 1;
+      while (e > s && pages[e].replace(/\s+/g, '').length < 200) e--;
+      const all = pages.slice(s, e + 1).join('\n');
+      const dev = /devoir\s*(\d+)/i.exec(all);
+      const ttl = /^\s*(?:exercise|issue\s*:)\s*(.+)$/im.exec(all) || /^\s*annexe\s*\n+\s*(.+)$/im.exec(all);
+      const title = ttl ? ttl[1].trim().replace(/\s+/g, ' ').slice(0, 70) : '';
+      return { from: s + 1, to: e + 1, label: (dev ? 'Devoir ' + dev[1] : 'Texte ' + (k + 1)) + (title ? ' · ' + title : '') };
+    });
+  }
+
   async function extractPdf(blob, name, u8) {
     let res = null, pdfErr = null;
     try {
@@ -1126,7 +1162,14 @@
     const meaningful = res ? res.text.replace(/\s+/g, '').length : 0;
     if (res && meaningful >= Math.min(60, 20 * Math.max(1, res.pagesRead))) {
       const out = { text: res.text, method: 'pdfjs' };
-      if (res.partial) out.warning = 'PDF lu partiellement (' + res.pagesRead + ' pages sur ' + res.numPages + ').';
+      if (res.partial || res.truncated) out.warning = 'PDF lu partiellement (' + res.pagesRead + ' pages sur ' + res.numPages + ').';
+      // Long document (cours) : pages nettoyées et textes repérés, l'utilisateur choisit le sujet.
+      if (res.pages.length >= 5 && res.text.split(/\s+/).length > config.longWords) {
+        out.pages = stripRepeated(res.pages);
+        out.parts = findParts(out.pages);
+        const first = out.parts[0] || { from: 1, to: Math.min(2, out.pages.length) };
+        out.text = out.pages.slice(first.from - 1, first.to).join('\n\n');
+      }
       return out;
     }
     if (aiReady()) {
@@ -1211,6 +1254,7 @@
     if (res.warning) warnings.push(res.warning);
     if (/\[… texte tronqué/.test(text.slice(-120)) && text.length < raw.length) warnings.push('Texte très long : tronqué à ' + config.maxChars.toLocaleString('fr-FR') + ' caractères.');
     const out = { text, method: res.method };
+    if (res.pages) { out.pages = res.pages; out.parts = res.parts; out.numPages = res.pages.length; }
     if (warnings.length) out.warning = warnings.join(' ');
     return out;
   }
@@ -1229,7 +1273,7 @@
     loadPdfJs,
     _internal: {
       readZip, inflateRaw, inflateRawJS, docxXmlToText, odfXmlToText, rtfToText, htmlToText, decodeText,
-      pdfItemsToText, oleDocText, sniff, jsonToText,
+      pdfItemsToText, oleDocText, sniff, jsonToText, stripRepeated, findParts,
       resetPdfJs: () => { pdfjsPromise = null; }
     }
   };

@@ -698,9 +698,41 @@
       <div class="field"><label for="ex-imp-text">… ou collez le texte de l’article et la question</label>
         <textarea id="ex-imp-text" rows="7" data-f="text" lang="en" placeholder="Headline&#10;&#10;Paragraph 1…&#10;&#10;Question: To what extent…?"></textarea></div>
       <p class="small muted" data-b="state">${aiReady() ? 'L’IA détecte le titre, la source, la question et prépare un corrigé pour le jury.' : 'Sans clé IA : le texte est découpé en paragraphes, sans corrigé. Vérifiez la question.'}</p>
+      <div data-b="pages"></div>
       <div data-b="preview"></div>
     </div>`);
     const setState = (t, busy) => { $('[data-b="state"]', body).innerHTML = (busy ? '<span class="spinner spinner-xs"></span> ' : '') + esc(t); };
+    // Long cours : choisir le texte du sujet (devoir repéré ou plage de pages).
+    function pagePicker(r, name) {
+      const box = $('[data-b="pages"]', body);
+      if (!r || !Array.isArray(r.pages) || !r.pages.length) { box.innerHTML = ''; return; }
+      const n = r.pages.length, parts = r.parts || [];
+      const first = parts[0] || { from: 1, to: Math.min(2, n) };
+      box.innerHTML = `<div class="field"><span class="label">Long document (${n} pages) : choisissez le texte du sujet</span>
+        ${parts.length ? `<div class="ex-chips" role="radiogroup" aria-label="Textes repérés">${parts.map((p, i) => `<button type="button" class="chip${i === 0 ? ' on' : ''}" role="radio" aria-checked="${i === 0}" data-part="${i}">${esc(p.label)} <small>p. ${p.from}–${p.to}</small></button>`).join('')}</div>` : '<p class="small muted">Aucun devoir repéré : indiquez les pages de l’article.</p>'}
+        <div class="row">Pages <input class="input" type="number" min="1" max="${n}" value="${first.from}" data-p="from" aria-label="Première page" style="width:5.5em"> à <input class="input" type="number" min="1" max="${n}" value="${first.to}" data-p="to" aria-label="Dernière page" style="width:5.5em">
+        <button type="button" class="btn btn-sm" data-act="take-pages">Prendre ces pages</button></div></div>`;
+      const inFrom = $('[data-p="from"]', box), inTo = $('[data-p="to"]', box);
+      const take = () => {
+        const a = Math.min(n, Math.max(1, Math.round(Number(inFrom.value) || 1)));
+        const b = Math.min(n, Math.max(a, Math.round(Number(inTo.value) || a)));
+        inFrom.value = a; inTo.value = b;
+        const t = S.docs.clean(r.pages.slice(a - 1, b).join('\n\n'));
+        $('[data-f="text"]', body).value = t;
+        reset();
+        setState(`Pages ${a}–${b} de « ${name} » (${words(t)} mots). Cliquez sur « Analyser ».`);
+        if (t.length >= S.docs.config.maxChars - 200) toast('Trop de pages : texte tronqué à ' + S.docs.config.maxChars.toLocaleString('fr-FR') + ' caractères. Choisissez seulement l’article.', 'warn');
+      };
+      $$('[data-part]', box).forEach((c) => c.addEventListener('click', () => {
+        const p = parts[Number(c.dataset.part)];
+        $$('[data-part]', box).forEach((x) => { x.classList.toggle('on', x === c); x.setAttribute('aria-checked', String(x === c)); });
+        inFrom.value = p.from; inTo.value = p.to; take();
+      }));
+      $('[data-act="take-pages"]', box).addEventListener('click', () => {
+        $$('[data-part]', box).forEach((x) => { x.classList.remove('on'); x.setAttribute('aria-checked', 'false'); });
+        take();
+      });
+    }
     // Nouveau texte : l'aperçu analysé ne correspond plus.
     function reset() {
       if (!st.subject) return;
@@ -719,7 +751,9 @@
         const r = await S.docs.extract(f, f.name);
         $('[data-f="text"]', body).value = str(r && r.text).trim();
         reset();
-        setState(`« ${f.name} » lu (${words(r.text)} mots). Cliquez sur « Analyser ».`);
+        pagePicker(r, f.name);
+        const sel = r && r.pages ? ((r.parts && r.parts[0]) || { from: 1, to: Math.min(2, r.pages.length) }) : null;
+        setState(sel ? `« ${f.name} » : pages ${sel.from}–${sel.to} retenues (${words(r.text)} mots). Changez si besoin, puis « Analyser ».` : `« ${f.name} » lu (${words(r.text)} mots). Cliquez sur « Analyser ».`);
         if (r && r.warning) toast(r.warning, 'warn');
       } catch (e) { setState(errMsg(e)); toast(errMsg(e), 'err'); }
     }
