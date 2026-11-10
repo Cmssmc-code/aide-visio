@@ -3044,11 +3044,11 @@
     }
     const lineHTML = (l, isNew) => `<p class="lv-line${isNew ? ' is-new' : ''}"><span class="lv-en" lang="en">${esc(l.en)}</span><span class="lv-tr" lang="fr">${esc(str(l.fr))}</span></p>`;
     // Outils de la réponse (discrets) et de la vue (fenêtre flottante, plein écran, arrêt).
-    const askNowBtn = (short) => `<button type="button" class="btn btn-sm lv-ghost" data-act="ask-now" title="Répondre à ce que le jury vient de dire (touche Espace)" aria-keyshortcuts="Space">${icon('refresh')}<span>${short ? 'Répondre' : 'Répondre maintenant'}</span></button>`;
+    const askNowBtn = (short) => `<button type="button" class="btn btn-sm lv-ghost" data-act="ask-now" title="Répondre à ce que le jury vient de dire (touche Espace)" aria-label="Répondre maintenant" aria-keyshortcuts="Space">${icon('sparkles')}<span>${short ? 'Répondre' : 'Répondre maintenant'}</span></button>`;
     function answerTools(busy, float) {
       const t = (act, ic, label, busyLabel, title, key) => {
         const on = busy && R.mode === act;
-        return `<button type="button" class="btn btn-sm lv-ghost${on ? ' on' : ''}" data-act="${act}" title="${title}" aria-keyshortcuts="${key}"${on ? ' aria-disabled="true"' : ''}>${icon(ic)}<span>${on ? busyLabel : label}</span></button>`;
+        return `<button type="button" class="btn btn-sm lv-ghost${on ? ' on' : ''}" data-act="${act}" title="${title}" aria-label="${label}" aria-keyshortcuts="${key}"${on ? ' aria-disabled="true"' : ''}>${icon(ic)}<span>${on ? busyLabel : label}</span></button>`;
       };
       return `<div class="ex-live-actions lv-tools lv-atools">
         ${float && L.A.on ? askNowBtn(true) : ''}
@@ -3122,8 +3122,8 @@
           <div class="ex-live-ans lv-ans${busy ? ' is-streaming' : ''}" data-b="ans" aria-label="Réponse proposée">${lines.map((l) => lineHTML(l)).join('')}</div>
         </div>
         ${!busy && a.error ? errHTML(a.error, ek, float) : ''}
-        <div class="lv-foot">${st}${kw}${a.error && !a.text ? '' : answerTools(busy, float)}</div>
-        ${errBox()}`;
+        <div class="lv-foot${!busy && arr(a.keyWords).length ? ' has-kw' : ''}">${st}${kw}${a.error && !a.text ? '' : answerTools(busy, float)}</div>
+        ${!busy && a.error && ek === 'key' && R.errKind === 'key' ? '' : errBox()}`;
     }
     // Page cachée (Teams au premier plan) : seule la fenêtre flottante est repeinte.
     const views = () => { const main = $('[data-b="live"]', root); const fl = R.float ? [R.float.box] : []; return (document.hidden && fl.length ? fl : [main].concat(fl)).filter(Boolean); };
