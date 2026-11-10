@@ -1224,6 +1224,10 @@ async def main():
     async with websockets.serve(handler, "127.0.0.1", PORT, max_size=2 ** 16, ping_interval=20):
         log.info("à l'écoute sur ws://127.0.0.1:%d (/transcription, /son) · modèle %s", PORT, MODEL_PREF)
         print(f"Son du PC Aide Visio : ws://127.0.0.1:{PORT} (journal : {LOG_DIR / 'son-pc.log'})", flush=True)
+        # Modèle chargé dès le lancement (15 s à 3 min à froid) : l'oral démarre sans attendre.
+        # Aucune capture n'est ouverte avant « start ».
+        if hub.engine is None:
+            hub.engine = Engine(hub.broadcast)
         await asyncio.Future()
 
 
