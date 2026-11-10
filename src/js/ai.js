@@ -36,7 +36,7 @@
     // seulement si le 1er n'a encore rien écrit après hedgeMs.
     liveFirstTokenMs: 6000,
     liveIdleMs: 8000,
-    hedgeMs: 2500,
+    hedgeMs: 1300,
     slowMs: 2 * 60 * 1000,
     warmMs: 9000
   };
@@ -397,11 +397,14 @@
     return FALLBACK[p];
   }
 
-  function providerOrder(s) {
+  function providerOrder(s, purpose) {
     const pref = (s || settings()).provider;
     if (pref === 'claude') return ['claude', 'openai', 'gemini', 'groq'];
     if (pref === 'groq') return ['groq', 'openai', 'gemini', 'claude'];
     if (pref === 'gemini') return ['gemini', 'openai', 'claude', 'groq'];
+    // Pendant l'appel, la vitesse prime. Mesuré le 10/11/2026 (réponse entière) : Groq 0,5 à 1,2 s,
+    // Gemini lite 1,5 s, OpenAI 1,5 à 6 s. Quota Groq atteint : refus immédiat, le suivant prend le relais.
+    if (purpose === 'live' || purpose === 'fast') return ['groq', 'gemini', 'openai', 'claude'];
     return ['openai', 'gemini', 'claude', 'groq'];
   }
 
@@ -423,7 +426,7 @@
 
   function rankAll(purpose, keysOnly) {
     const s = settings();
-    const provs = providerOrder(s).filter(p => !keysOnly || keyOf(p));
+    const provs = providerOrder(s, purpose).filter(p => !keysOnly || keyOf(p));
     let list = [];
     provs.forEach(p => {
       const ids = modelsFor(p);

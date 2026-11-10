@@ -58,7 +58,7 @@ def engine_without_devices():
     eng.early_lock = threading.Lock()
     eng.early_mark = eng.early_inflight = None
     eng.ready, eng.early_sent, eng.waiting = None, set(), {}
-    eng.seg = {"them": sp.Segmenter("them", eng.on_speech, eng.on_segment, 700),
+    eng.seg = {"them": sp.Segmenter("them", eng.on_speech, eng.on_segment, 700, 29000),
                "me": sp.Segmenter("me", eng.on_speech, eng.on_segment, 800)}
     eng.caps, eng.caps_lock = {}, threading.Lock()
     eng.last_in = {"them": 0.0, "me": 0.0}

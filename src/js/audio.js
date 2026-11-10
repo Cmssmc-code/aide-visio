@@ -14,6 +14,7 @@
     DISPLAY_UNSUPPORTED: "Ce navigateur ne sait pas capter le son d'un onglet. Utilisez Chrome ou Edge sur PC, ou choisissez « Micro / haut-parleur ».",
     DISPLAY_NEEDS_GESTURE: "Le partage d'onglet doit partir d'un clic : appuyez de nouveau sur le bouton qui lance l'écoute.",
     DISPLAY_ENDED: "Le partage de l'onglet a été arrêté : la voix du jury n'est plus captée.",
+    PC_SILENT: "Aucun son de l'appel capté depuis 2 minutes. Vérifiez que Teams ou Meet sort sur les haut-parleurs par défaut de Windows.",
     DISPLAY_SILENT: "Aucun son ne vient de l'onglet partagé depuis une minute. Vérifiez l'onglet choisi et la case de partage de l'audio.",
     MIC_DENIED: "Accès au micro refusé. Cliquez sur le cadenas à gauche de l'adresse, autorisez le micro, puis réessayez.",
     MIC_NOT_FOUND: "Aucun micro détecté. Branchez un micro ou un casque, puis réessayez.",
@@ -1015,7 +1016,7 @@ registerProcessor('aidevisio-tap', AideVisioTap);
       ws.onopen = () => {
         opened = true;
         const st = getSettings();
-        this.send({ type: 'start', lang: this.s.lang, hint: this.s.hint || '', keys: { groq: st.groqKey || '' } });
+        this.send({ type: 'start', lang: this.s.lang, hint: this.s.hint || '', keys: { groq: st.groqKey || '', openai: st.openaiKey || '' } });
       };
       ws.onmessage = (e) => {
         let m = null;
@@ -1100,7 +1101,7 @@ registerProcessor('aidevisio-tap', AideVisioTap);
   }
   class LocalEngine {
     constructor(ch, link) { this.ch = ch; this.link = link; }
-    start() { if (this.link.ready) this.ch.setState(this.ch.s.paused ? 'paused' : 'listening'); }
+    start() { this.ch.lastSoundAt = now(); if (this.link.ready) this.ch.setState(this.ch.s.paused ? 'paused' : 'listening'); }
     pause() { this.link.send({ type: 'pause' }); this.ch.setState('paused'); }
     resume() { this.link.send({ type: 'resume' }); this.ch.setState(this.link.ready ? 'listening' : 'restarting'); }
     stop() {  }
@@ -1515,7 +1516,11 @@ registerProcessor('aidevisio-tap', AideVisioTap);
     onLevel(rms, peak) {
       const v = levelToUnit(rms);
       this.level = v > this.level ? v : this.level * 0.7 + v * 0.3;
-      if (peak > 0.002) this.lastSoundAt = now();
+      if (peak > 0.002) {
+        this.lastSoundAt = now();
+        this.everSound = true;
+        if (this.silentWarned && this.engineKind === 'local') { this.silentWarned = false; info(this.who, 'PC_SOUND_BACK', 'info'); }
+      }
       emit('level', { who: this.who, rms: this.level, raw: rms, peak });
       this.s.tick();
     }
@@ -1530,6 +1535,14 @@ registerProcessor('aidevisio-tap', AideVisioTap);
       if (this.engineKind === 'cloud' || (this.engineKind === 'local' && this.role === 'them')) {
         if (active && !this.interimShown) { this.interimShown = true; emit('interim', { who: this.who, text: '…' }); }
         else if (!active && this.engine) this.engine.idleInterim();
+        // Bruit sans phrase (toux, bip) : ni texte ni fin ne suivent. Le « … » est retiré, vos phrases ne sont plus retenues.
+        if (!active && this.engineKind === 'local') {
+          clearTimeout(this.idleT);
+          this.idleT = setTimeout(() => {
+            if (this.speaking || !this.interimShown || this.ended || this.s.stopped) return;
+            this.interimShown = false; emit('interim', { who: this.who, text: '' }); this.s.checkHeld();
+          }, 4000);
+        }
       }
       this.s.checkHeld();
     }
@@ -1829,6 +1842,11 @@ registerProcessor('aidevisio-tap', AideVisioTap);
           ch.silentWarned = true;
           info(ch.who, 'DISPLAY_SILENT', 'warn');
         }
+        // Son du PC : rien entendu depuis le début (Teams sort sur un autre périphérique que celui de Windows).
+        if (ch.engineKind === 'local' && ch.role === 'them' && !ch.ended && !ch.everSound && !ch.silentWarned && !this.paused && ch.lastSoundAt && t - ch.lastSoundAt > 120000) {
+          ch.silentWarned = true;
+          info(ch.who, 'PC_SILENT', 'warn');
+        }
       }
       this.checkHeld();
     }
@@ -1847,7 +1865,10 @@ registerProcessor('aidevisio-tap', AideVisioTap);
       }
       if (ch.who === 'me' && this.channel('them')) {
         if (this.isEchoOfThem(item)) return;
-        const ov = spanOverlap(item.t, now() - this.t0, this.themSpans, now() - this.t0);
+        // Bornes réelles de la phrase (pas l'heure de réception du texte) : une réponse courte suivie du
+        // correspondant n'est pas comptée comme dite en même temps que lui.
+        const end = item.durMs > 0 ? item.t + item.durMs : now() - this.t0;
+        const ov = spanOverlap(item.t, end, this.themSpans, now() - this.t0);
         if (ov >= 0.6 && this.themStalled()) return this.emitViaMic(item);
         if (this.themBusy() || ov >= 0.6) { this.heldMe.push({ item, at: now(), ov }); return; }
       }
@@ -1891,7 +1912,7 @@ registerProcessor('aidevisio-tap', AideVisioTap);
         if (busy && t - h.at < 8000) break;
         this.heldMe.shift();
         if (this.isEchoOfThem(h.item)) continue;
-        if (h.ov >= 0.6) this.emitViaMic(h.item);
+        if (h.ov >= 0.6 && this.themStalled()) this.emitViaMic(h.item);
         else emit('final', h.item);
       }
     }

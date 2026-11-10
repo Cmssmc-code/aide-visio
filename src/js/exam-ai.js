@@ -728,20 +728,20 @@
     'sorry', 'pardon', 'excuse me', 'i see', 'of course', 'sure', 'exactly', 'indeed', 'interesting',
     'very good', 'good', 'great', 'perfect', 'fine', 'excellent', 'ok(?:ay)?', 'alright', 'all right', 'right',
     'so', 'well', 'now', 'and', 'then', 'please', 'yes', 'yeah', 'um+', 'uh+', 'hmm+', 'mm+', 'erm',
-    'audrey', 'corentin', 'madam', 'sir', 'everyone', 'everybody'
+    'go on', 'just', 'however', 'but', 'actually', 'audrey', 'corentin', 'madam', 'sir', 'everyone', 'everybody'
   ].join('|') + ')(?: |$)');
   const Q_FORMAL = new RegExp('^(?:' + [
     'is (?:it|everything|that|this) (?:ok|okay|fine|all right|alright|good|working|better|clear)(?: (?:now|for you))*',
     'is (?:my|the|your) (?:sound|audio|microphone|mic|video|camera|connection|screen|image)(?: (?:ok|okay|fine|good|working|clear|better|all right|alright))?(?: (?:now|for you))*',
     '(?:can|could|do) you (?:all )?(?:hear|see) (?:it|that)(?: (?:well|ok|okay|properly|clearly|now))*',
-    'are you (?:ready(?: to (?:start|begin))?|there|still there|with us)',
+    'are you (?:ready(?: to (?:start|begin))?|there|still there|with us)', 'how are you(?: (?:today|doing|feeling))?',
     "(?:(?:when(?:ever)?|if) you(?:'?re| are) ready )?(?:you (?:may|can) )?(?:start|begin|go ahead|proceed)(?: (?:now|please|when(?:ever)? you(?:'?re| are) ready))*",
     "(?:let(?:'?s| us)|shall we|can we|we can|we may) (?:start|begin|get started)(?: (?:now|then))?"
   ].join('|') + ')$');
   const Q_ASK = new RegExp('^(?:' + [
     "(?:what|why|how|when|where|who|whom|which|whose)(?:'?s)?",
     "(?:do|does|did|is|are|was|were|have|has|can|could|would|will|should|shall)(?:n'?t)?", 'cannot', "won'?t", '(?:may|might) (?:i|we)',
-    'tell (?:us|me)', 'give (?:us|me)', 'talk about', 'explain', 'describe', 'summari[sz]e', 'define', 'comment on', 'develop', 'elaborate',
+    'tell (?:us|me)', 'give (?:us|me)', 'talk (?:to (?:us|me) )?about', 'say (?:a bit |a little )?more', "i(?:'?m| am| was| would be|'?d be) (?:wondering|curious|interested)", 'i wonder', 'explain', 'describe', 'summari[sz]e', 'define', 'comment on', 'develop', 'elaborate',
     'expand on', 'justify', 'illustrate', 'clarify', 'rephrase', 'remind (?:us|me)',
     'compare', 'discuss', 'present (?:your|the|us|me)','analy[sz]e', 'assess', 'evaluate', '(?:imagine|suppose) (?:you|that you|for a moment)','name (?:one|a|two|three|some)',
     'take the (?:example|case) of', 'how so', 'what else', 'anything (?:else|to add)', 'any (?:other )?(?:example|idea|comment|thought)s?',
@@ -750,13 +750,14 @@
     "i(?:'?d| would) like (?:you to|to (?:ask|know|hear))", 'i want you to',
     'my (?:next |last |final |first |second |other )?question', '(?:one|a) (?:more|last|final|quick|follow up) question', 'i have (?:a|another|one more|one last) question'
   ].join('|') + ')\\b');
-  const Q_NOT = /^(?:which (?:means|is why|explains|shows|leads)|what (?:i|you) (?:mean|want to say|wanted to say)|how (?:can|could|should|do) i (?:say|put it)|how do you say|what (?:i|we) (?:[a-z']+ ){0,3}(?:is|was) (?:that|to) (?=[a-z])|what (?:is|was) (?:[a-z']+ ){1,2}(?:is|was) that (?=[a-z])|(?:could|can|would) you (?:please )?(?:repeat|say (?:it|that) again)(?: (?:the question|that|it|please))*$|what was the question|(?:can|may|could|shall) i (?:start|begin|continue|go on)|is it (?:ok|okay|alright|all right) if i (?:start|begin|continue|go on))\b/;
+  const Q_NOT = /^(?:which (?:means|is why|explains|shows|leads)|what (?:i|you) (?:mean|want to say|wanted to say)|how (?:can|could|should|do) i (?:say|put it)|how do you say|what (?:i|we) (?:[a-z']+ ){0,3}(?:is|was) (?:that|to) (?=[a-z])|what (?:is|was) (?:[a-z']+ ){1,2}(?:is|was) that (?=[a-z])|(?:could|can|would) you (?:please )?(?:repeat|say (?:it|that) again)(?: (?:the question|that|it|please))*$|(?:do not|don'?t) hesitate|what was the question|(?:can|may|could|shall) i (?:start|begin|continue|go on)|is it (?:ok|okay|alright|all right) if i (?:start|begin|continue|go on))\b/;
   // Question-tag en fin de phrase : « …, isn't it », « don't you think ».
   const Q_TAG = /\b(?:(?:is|are|was|were|do|does|did|can|could|will|would|should|has|have)n'?t (?:it|they|there|that|you|we|he|she)|don'?t you think|wouldn'?t you say|or not)$/;
   const Q_ANY = new RegExp('\\b(?:' + [
     "(?:do|does|did|would|could|can|will|should|don'?t|didn'?t|wouldn'?t|couldn'?t) you (?:think|agree|believe|say|tell|explain|give|describe|elaborate|develop|expand|comment|summari[sz]e|define|mean|know|feel|recommend|suggest|choose|prefer|like|want|remember|clarify|justify|illustrate|consider|expect|imagine|have)",
     '(?:what|why|how|which|where|when|who) (?:do|did|does|would|could|can|will|should|might) you',
-    'in your (?:opinion|view)', 'according to you', 'tell (?:us|me)'
+    'in your (?:opinion|view)', 'according to you', 'tell (?:us|me)',
+    '(?:i|we) wonder (?:how|why|what|if|whether|which|who|where|when)', 'let me ask you', "i(?:'?d| would) like to ask", 'i have (?:a|another|one) (?:last |final )?question'
   ].join('|') + ')\\b');
 
   function normQ(s) {
@@ -773,7 +774,7 @@
     const raw = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
     if (!raw) return false;
     const parts = raw.split(/(?<=[.!?;…？])\s+/)
-      .map(p => ({ raw: p, rest: stripLead(normQ(p)) }))
+      .map(p => ({ raw: p, rest: stripLead(normQ(p)) || (/^(?:so|and|then|well)\s*[?？]$/i.test(p) ? 'so' : '') }))
       .filter(p => p.rest && !Q_FORMAL.test(p.rest));
     if (!parts.length) return false;
     // Question rhétorique de l'élève : « Why? Because… ».

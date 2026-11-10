@@ -232,10 +232,12 @@ class StreamVad:
 class Segmenter:
     """Découpe une source en phrases : début si la parole est probable, fin après un silence suffisant."""
 
-    def __init__(self, who, on_speech, on_segment, hang_ms):
+    def __init__(self, who, on_speech, on_segment, hang_ms, max_ms=15000):
         self.who = who
         self.on_speech, self.on_segment = on_speech, on_segment
         self.hang_ms = hang_ms
+        # Phrase très longue : coupée de préférence sur une pause, dans les 5 dernières secondes permises.
+        self.max_ms = max_ms
         self.vad = StreamVad()
         self.buf = np.zeros(0, dtype=np.float32)
         self.pre = deque(maxlen=10)
@@ -285,7 +287,8 @@ class Segmenter:
                         self.cur = self.cur[-10:]
                         self.t0 = t - 32.0 * len(self.cur)
                     self.on_speech(self.who, True, t)
-                if len(self.cur) * 32 >= 15000:
+                ms = len(self.cur) * 32
+                if ms >= self.max_ms or (ms >= self.max_ms - 5000 and p < 0.35 and t - self.last_voice >= 200):
                     self.close(t, keep_going=True)
                 elif t - self.last_voice >= self.hang_ms:
                     self.close(t)
@@ -300,6 +303,7 @@ class Segmenter:
         t0, t1 = self.t0, min(t, self.last_voice + 200)
         if keep_going:
             self.cur, self.t0 = [], t
+            self.quiet = self.finalized = False
         else:
             self.cur = None
             self.run = 0
@@ -320,7 +324,8 @@ class Segmenter:
 
 
 HALLUCINATIONS = re.compile(
-    r"sous-titr|merci d'avoir regard|abonnez-vous|amara\.org|radio-canada|^\W*(merci|musique|applaudissements)\W*$",
+    r"sous-titr|merci d'avoir regard|abonnez-vous|amara\.org|radio-canada|thanks? for watching|subtitles? by|"
+    r"^\W*(merci|musique|applaudissements|thank you|thanks|you|bye|music|applause)\W*$",
     re.I)
 
 
@@ -356,6 +361,7 @@ def wav_bytes(audio):
 
 CLOUD = (
     ("groq", "https://api.groq.com/openai/v1/audio/transcriptions", "whisper-large-v3-turbo"),
+    ("groq", "https://api.groq.com/openai/v1/audio/transcriptions", "whisper-large-v3"),
     ("openai", "https://api.openai.com/v1/audio/transcriptions", "gpt-4o-mini-transcribe"),
 )
 CLOUD_TIMEOUT = 3.0
@@ -365,7 +371,9 @@ def cloud_transcribe(url, model, key, audio, lang, prompt):
     import urllib.request
     import uuid
     boundary = uuid.uuid4().hex
-    fields = {"model": model, "language": lang, "response_format": "json", "temperature": "0"}
+    verbose = "groq.com" in url
+    fields = {"model": model, "language": lang, "response_format": "verbose_json" if verbose else "json",
+              "temperature": "0"}
     if prompt:
         fields["prompt"] = prompt
     body = b""
@@ -376,8 +384,16 @@ def cloud_transcribe(url, model, key, audio, lang, prompt):
     req = urllib.request.Request(url, data=body, method="POST", headers={
         "Authorization": f"Bearer {key}", "Content-Type": f"multipart/form-data; boundary={boundary}",
         "User-Agent": "AideVisio-SonPC/1.0", "Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=CLOUD_TIMEOUT) as r:
-        return str(json.loads(r.read().decode("utf-8")).get("text", "")).strip()
+    # Délai proportionné à la taille envoyée (une longue question pèse plusieurs centaines de Ko).
+    with urllib.request.urlopen(req, timeout=max(CLOUD_TIMEOUT, 1.5 + audio.size / SR * 0.25)) as r:
+        d = json.loads(r.read().decode("utf-8"))
+    segs = d.get("segments") if verbose else None
+    if isinstance(segs, list) and segs:
+        # Passages que le modèle juge lui-même sans parole (toux, bip, souffle) : écartés.
+        return " ".join(str(x.get("text", "")).strip() for x in segs
+                        if not (float(x.get("no_speech_prob") or 0) > 0.6
+                                and float(x.get("avg_logprob") or 0) < -0.8)).strip()
+    return str(d.get("text", "")).strip()
 
 
 class Transcriber:
@@ -401,6 +417,7 @@ class Transcriber:
         self.hint = ""
         self.keys = {}
         self.cloud_off_until = {}
+        self.cloud_fails = {}
         self.busy = False
         self.interim_pending = False
         self.on_interim = None
@@ -482,13 +499,31 @@ class Transcriber:
                 return k
         return None
 
-    def cloud_ready(self):
-        return any(self.keys.get(p) and time.time() >= self.cloud_off_until.get(p, 0) for p, _, _ in CLOUD)
+    def _routes(self, who):
+        """Services en ligne à essayer, dans l'ordre. Correspondant : Groq (le plus rapide) puis OpenAI.
+        Vos phrases : OpenAI d'abord, pour garder au correspondant le quota par minute de Groq."""
+        routes = [c for c in CLOUD if self.keys.get(c[0])]
+        if who == "me":
+            routes.sort(key=lambda c: c[0] != "openai")
+        return routes
+
+    def cloud_ready(self, who="them"):
+        t = time.time()
+        return any(t >= self.cloud_off_until.get((p, m), 0) for p, _, m in self._routes(who))
+
+    def _clean(self, text):
+        t = str(text or "").strip()
+        if not t or HALLUCINATIONS.search(t):
+            return ""
+        # Sur du silence, Whisper recopie parfois l'indice de vocabulaire qu'on lui donne.
+        if len(t) > 12 and t.lower().strip(" .,!?…") in self.hint.lower():
+            return ""
+        return t
 
     def add(self, who, audio, t0, t1):
         # Vos phrases, transcrites en ligne, passent par leur propre fil : une question du correspondant
         # n'attend jamais derrière elles.
-        if who == "me" and self.cloud_ready():
+        if who == "me" and self.cloud_ready("me"):
             with self.me_cv:
                 self.me_q.append((who, audio, t0, t1))
                 self.me_cv.notify()
@@ -519,6 +554,11 @@ class Transcriber:
                 return False
             self.interim_pending = True
             n = audio.size
+            if early and any(j[2] == "early" and j[3] == who for j in self.q):
+                # Une demande anticipée plus ancienne de la même phrase ne sert plus : elle ne ferait
+                # qu'attendre la bonne et consommer le quota en ligne.
+                self.q = [j for j in self.q if not (j[2] == "early" and j[3] == who)]
+                heapq.heapify(self.q)
             heapq.heappush(self.q, (0.5 if early else 2, next(self.seq), "early" if early else "interim", who, audio, t0, n))
             self.cv.notify()
             return True
@@ -561,7 +601,7 @@ class Transcriber:
             try:
                 if kind in ("interim", "early"):
                     start = time.time()
-                    text, name = self._cloud(audio) if kind == "early" else (None, None)
+                    text, name = self._cloud(audio, who) if kind == "early" else (None, None)
                     if name is None:
                         text, name = self._local(audio, fast=kind == "interim")
                     if self.on_interim:
@@ -589,30 +629,46 @@ class Transcriber:
             if not txt or (s.no_speech_prob > 0.6 and s.avg_logprob < -0.8) or HALLUCINATIONS.search(txt):
                 continue
             parts.append(txt)
-        return " ".join(parts).strip(), name
+        return self._clean(" ".join(parts)), name
 
-    def _cloud(self, audio):
-        for prov, url, model in CLOUD:
-            key = self.keys.get(prov)
-            if not key or time.time() < self.cloud_off_until.get(prov, 0):
+    def _cloud(self, audio, who="them"):
+        failed = None
+        for prov, url, model in self._routes(who):
+            k = (prov, model)
+            if time.time() < self.cloud_off_until.get(k, 0):
                 continue
             t = time.time()
             try:
-                text = cloud_transcribe(url, model, key, audio, self.lang, self.hint)
-                if HALLUCINATIONS.search(text):
-                    text = ""
-                return text, prov
+                text = cloud_transcribe(url, model, self.keys[prov], audio, self.lang, self.hint)
+                self.cloud_fails.pop(k, None)
+                return self._clean(text), prov
             except Exception as e:
                 code = getattr(e, "code", None)
-                self.cloud_off_until[prov] = time.time() + (3600 if code in (401, 403) else 60 if code == 429 else 20)
-                log.warning("%s en échec en %.1f s (%s) : Whisper local", prov, time.time() - t, code or e)
-                self.emit({"type": "info", "code": "CLOUD_FALLBACK",
-                           "message": f"Transcription {prov} indisponible ({code or 'réseau'}) : transcription locale."})
+                if code in (401, 403):
+                    off = 3600.0
+                elif code == 429:
+                    # Quota par minute atteint : on attend ce que le service demande, pas plus.
+                    try:
+                        off = float(e.headers.get("retry-after") or 0)
+                    except Exception:
+                        off = 0.0
+                    off = min(120.0, max(5.0, off or 30.0))
+                else:
+                    # Coupure réseau ou service lent : un échec isolé n'écarte pas le service.
+                    n = self.cloud_fails[k] = self.cloud_fails.get(k, 0) + 1
+                    off = 5.0 if n >= 2 else 0.0
+                if off:
+                    self.cloud_off_until[k] = time.time() + off
+                failed = f"{prov} ({code or 'réseau'})"
+                log.warning("%s %s en échec en %.1f s (%s), écarté %.0f s", prov, model, time.time() - t, code or e, off)
+        if failed:
+            self.emit({"type": "info", "code": "CLOUD_FALLBACK",
+                       "message": f"Transcription en ligne indisponible : {failed}. Transcription sur le PC, plus lente."})
         return None, None
 
     def _final(self, who, audio, t0, t1):
         start = time.time()
-        text, name = self._cloud(audio)
+        text, name = self._cloud(audio, who)
         if name is None:
             text, name = self._local(audio)
         took = time.time() - start
@@ -648,7 +704,7 @@ class Engine:
         self.ready = None
         self.early_sent = set()
         self.waiting = {}
-        self.seg = {"them": Segmenter("them", self.on_speech, self.on_segment, 700),
+        self.seg = {"them": Segmenter("them", self.on_speech, self.on_segment, 700, 29000),
                     "me": Segmenter("me", self.on_speech, self.on_segment, 800)}
         self.caps = {}
         self.last_in = {"them": 0.0, "me": 0.0}
@@ -679,6 +735,7 @@ class Engine:
             self.caps.clear()
             for s in self.seg.values():
                 s.cur, s.run = None, 0
+                s.quiet = s.finalized = False
                 s.vad.reset()
         log.info("captures fermées (aucun oral en cours)")
 
@@ -709,6 +766,10 @@ class Engine:
         words = WORDS.findall(str(msg.get("text", "")).lower())
         t0, t1 = float(msg.get("t0") or 0), float(msg.get("t1") or 0)
         if msg.get("who") == "them":
+            sent = self.__dict__.setdefault("sent_them", deque(maxlen=40))
+            if t0 in sent:
+                return True
+            sent.append(t0)
             recent.append((t0, t1, set(words)))
             return False
         if len(words) < 2:
@@ -785,6 +846,7 @@ class Engine:
                         elif s.cur is not None:
                             s.close(t)
                         s.vad.reset()
+                        s.quiet = s.finalized = False
                         s.buf = np.zeros(0, dtype=np.float32)
                     except Exception:
                         log.exception("fin de phrase forcée")
@@ -803,14 +865,22 @@ class Engine:
             th = self.seg["them"]
             if not self.paused and th.cur:
                 mark = (th.t0, th.last_voice)
-                if t - th.last_voice >= 250 and self.early_mark != mark and len(th.cur) <= 470:
-                    if self.tr.add_interim("them", np.concatenate(th.cur), th.t0, early=True):
+                if t - th.last_voice >= 250 and self.early_mark != mark and len(th.cur) <= 940:
+                    # Repère posé avant l'envoi : un résultat très rapide (échec en ligne immédiat) le retrouve.
+                    new = (th.t0, len(th.cur) * VAD_FRAME, th.last_voice)
+                    with self.early_lock:
+                        prev, self.early_inflight = self.early_inflight, new
+                    if not self.tr.add_interim("them", np.concatenate(th.cur), th.t0, early=True):
+                        with self.early_lock:
+                            if self.early_inflight == new:
+                                self.early_inflight = prev
+                    else:
                         self.early_mark = mark
-                        self.early_inflight = (th.t0, len(th.cur) * VAD_FRAME, th.last_voice)
                         if not th.quiet:
                             th.quiet = True
                             self.on_speech("them", False, t)
-                elif len(th.cur) * 32 >= 800 and t - last_interim >= 800 and t - th.last_voice < 250:
+                elif (len(th.cur) * 32 >= 800 and t - th.last_voice < 250
+                      and t - last_interim >= (800 if self.tr.live_model is not None else 2000)):
                     if self.tr.add_interim("them", np.concatenate(th.cur[-470:]), th.t0):
                         last_interim = t
             self._check_waiting(t)
@@ -867,10 +937,11 @@ class Engine:
                     return
                 self.ready = (t0, n, lv, text, ms, model)
 
-    QUIET_FINAL_MS = 450
+    # 0,6 s de silence : la plupart des pauses au milieu d'une question (on cherche ses mots) sont plus courtes.
+    QUIET_FINAL_MS = 600
 
     def _check_waiting(self, t):
-        """Phrase anticipée prête + 0,45 s de silence → envoyée tout de suite ; filet de sécurité des attentes."""
+        """Phrase anticipée prête + 0,6 s de silence → envoyée tout de suite ; filet de sécurité des attentes."""
         th = self.seg["them"]
         with self.early_lock:
             r = self.ready
@@ -883,7 +954,9 @@ class Engine:
                     self.early_sent.add(r[0])
                     th.finalized = True
                     self._emit_final("them", r[3], r[0], r[2] + 200, r[4], r[5] + "·anticipé")
-            late = [k for k, w in self.waiting.items() if t - w[2] > 4000]
+            # Filet : la transcription anticipée encore en route livrera elle-même la phrase (jusqu'à 12 s).
+            fly = self.early_inflight[0] if self.early_inflight else None
+            late = [k for k, w in self.waiting.items() if t - w[2] > (12000 if k == fly else 4000)]
             for k in late:
                 audio, t1, _ = self.waiting.pop(k)
                 self.tr.add("them", audio, k, t1)

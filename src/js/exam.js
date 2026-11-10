@@ -3302,6 +3302,7 @@
       if (R.ctrl) R.ctrl.abort();
       let item = o.item;
       if (!item) {
+        if (o.replace) call.answers = call.answers.filter((x) => x !== o.replace);
         if (prev && R.busy) {
           if (question.includes(prev.question)) call.answers = call.answers.filter((x) => x !== prev);
           else if (!prev.text) prev.error = 'Interrompue par la question suivante.';
@@ -3320,6 +3321,7 @@
       views().forEach((v) => { delete v.dataset.fitPx; });
       Object.assign(R, { req, ctrl, item, busy: true, partial: '', lines: [], born, raf: 0, mode: o.shorter ? 'shorter' : o.item ? 'retry' : 'auto' });
       item.error = ''; item.errNet = false;
+      if (!o.item) { R.autoItem = item; R.autoAt = born; }
       const drop = () => { call.answers = call.answers.filter((x) => x !== item); if (R.item === item) R.item = null; };
       try {
         if (!aiHas('liveAnswer')) throw new Error(OLD_AI);
@@ -3364,7 +3366,6 @@
         item.lines = arr(r.lines).filter((l) => l && str(l.en).trim()).map((l) => ({ en: str(l.en).trim(), fr: str(l.fr).trim() })).slice(0, 12);
         if (!item.fr && str(r.qFr).trim()) item.fr = str(r.qFr).trim();
         item.keyWords = arr(r.keyWords).map(str).map((k) => k.trim()).filter(Boolean).slice(0, 8);
-        R.jury = R.jury.filter((x) => x.at > born);
       } catch (e) {
         if (R.req !== req || !C.alive || isAbort(e)) return;
         const keyBad = !!(e && KEY_CODES.includes(e.code));
@@ -3372,12 +3373,15 @@
         item.errKey = keyBad;
         item.errNet = !!(e && /^(NETWORK|OFFLINE|TIMEOUT)$/.test(e.code));
       } finally {
-        if (R.req === req) { dropRaf(); Object.assign(R, { busy: false, ctrl: null, partial: '', lines: [], mode: '' }); if (C.alive) { paintLive(); paintHist(); } }
+        // Question traitée (réponse ou échec) : elle n'est plus collée à la suivante.
+        if (R.req === req) { R.jury = R.jury.filter((x) => x.at > born); dropRaf(); Object.assign(R, { busy: false, ctrl: null, partial: '', lines: [], mode: '' }); if (C.alive) { paintLive(); paintHist(); } }
         C.saveSoon();
       }
     }
 
-    C.onHeard = (role, text) => {
+    // Mots du jury qui ne prolongent pas une question (politesse, consigne).
+    const NOT_CONT = /^(?:ok(?:ay)?|all ?right|right|good|great|fine|yes|no|thanks?|thank you|sorry|please|well|so|take your time|go ahead|go on|i see|interesting|perfect|very good)/i;
+    C.onHeard = (role, text, ev) => {
       if (!text || !C.alive) return;
       L.A.interim = '';
       C.paintInterim();
@@ -3387,14 +3391,20 @@
       const jury = role === 'jury' || (role === 'mixed' && q);
       call.turns.push({ who: jury ? 'jury' : 'student', text, t: now - call.startedAt });
       if (call.turns.length > 400) call.turns.splice(0, call.turns.length - 400);
-      if (R.warn) { R.warn = ''; paintLive(); }
+      // Une alerte sur une source (son du PC non capté…) ne s'efface que si cette source se fait entendre.
+      if (R.warn && (!R.warnWho || R.warnWho === str(ev && ev.who))) { R.warn = ''; R.warnWho = ''; paintLive(); }
       if (jury) {
         warmAI();
         R.jury = R.jury.filter((x) => now - x.at < JOIN_MS).concat({ text, at: now });
         // Suite d'une question coupée par une pause du jury : relance avec la phrase entière tant que rien n'est affiché.
         const joined = R.jury.map((x) => x.text).join(' ');
-        const cont = !q && role === 'jury' && R.busy && R.mode === 'auto' && R.item && joined.includes(R.item.question) && !R.lines.length && !R.partial && now - R.born < 4000;
-        if (q || cont) ask(joined);
+        // Question coupée par une pause du jury : la suite relance la réponse avec la question entière,
+        // même si l'IA a commencé à écrire (dans les 6 s, tant que l'élève n'a pas répondu).
+        const base = R.autoItem;
+        const cont = !q && role === 'jury' && base && !base.forced && !base.mine && call.answers.includes(base) && now - R.autoAt < 6000 && !NOT_CONT.test(text.trim());
+        // « Répondre maintenant » puis phrase finale : la demande reste forcée.
+        if (q) ask(joined, { force: !!(R.busy && R.item && R.item.forced && now - R.born < JOIN_MS) });
+        else if (cont) ask(base.question + ' ' + text, { replace: base });
       } else {
         const a = shown();
         if (a) { a.mine = (a.mine ? a.mine + ' ' : '') + text; paintHist(); }
@@ -3552,9 +3562,9 @@
       if (!ev || !C.alive || !L.A.on) return;
       const code = str(ev.code);
       const msg = str(ev.message) || (S.audio.message && S.audio.message(code)) || '';
-      if (WARN_OFF.test(code)) { if (R.warn) { R.warn = ''; paintLive(); } return; }
+      if (WARN_OFF.test(code)) { if (R.warn) { R.warn = ''; R.warnWho = ''; paintLive(); } return; }
       if (!/^warn/.test(str(ev.kind)) || !msg) return;
-      R.warn = msg;
+      R.warn = msg; R.warnWho = str(ev.who);
       paintLive();
     }) : null;
 
