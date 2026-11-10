@@ -1247,7 +1247,7 @@ let callId = '';
     assert(fp.lines === 6 && fp.px >= 22 && (fp.fits || fp.scroll), 'fenêtre 760×420 : longue réponse lisible, entière ou défilante : ' + JSON.stringify(fp));
     assert(pg.lines === 6 && pg.px >= 24 && (pg.fits || pg.scroll), 'page : longue réponse lisible, entière ou défilante : ' + JSON.stringify(pg));
     assert(fp.kw.length === 2 && fp.kw[0] === 'droits de douane', 'traduction des mots-clés dans la fenêtre : ' + JSON.stringify(fp.kw));
-    const btns = await pop.evaluate(() => ['shorter', 'retry'].map((a) => { const b = document.querySelector(`.lv-float [data-act="${a}"]`); if (!b) return null; const r = b.getBoundingClientRect(); return r.width >= 60 && r.height >= 30 && r.bottom <= innerHeight && r.right <= innerWidth; }));
+    const btns = await pop.evaluate(() => ['shorter', 'retry'].map((a) => { const b = document.querySelector(`.lv-float [data-act="${a}"]`); if (!b) return null; const r = b.getBoundingClientRect(); return r.width >= 34 && r.height >= 30 && r.bottom <= innerHeight && r.right <= innerWidth && !!b.getAttribute('aria-label'); }));
     assert(btns.every(Boolean), 'Plus court / Réessayer visibles et cliquables dans la fenêtre : ' + JSON.stringify(btns));
     await pop.screenshot({ path: path.join(SHOTS, '56-teams-flottante-longue.png') });
     await shot(ep, '57-teams-reponse-longue', { both: false });
