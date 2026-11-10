@@ -1,6 +1,6 @@
 {
   "name": "aidevisio",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "private": true,
   "description": "Aide Visio — simulateur d'oral blanc d'anglais des affaires UE 218 (PWA, hors-ligne, fichier unique)",
   "homepage": "https://cmssmc-code.github.io/aide-visio/",

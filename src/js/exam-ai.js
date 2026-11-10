@@ -458,9 +458,7 @@
     const full = transcriptText(o.transcript);
     const local = heuristicCovered(full);
     if (!full || words(full) < 8) return { covered: local, errors: [], tips: [], source: 'local' };
-    if (!ready()) {
-      return { covered: local, errors: [], tips: ['IA indisponible : repérage simplifié par mots-clés.'], source: 'local' };
-    }
+    if (!ready()) return { covered: local, errors: [], tips: [], source: 'local' };
     const sub = o.subject || {};
     const tail = full.length > 1200 ? full.slice(full.length - 1200) : full;
     const earlier = full.length > 1200 ? clipMiddle(full.slice(0, full.length - 1200), 2500, 2500) : '';
@@ -745,11 +743,16 @@
     "(?:do|does|did|is|are|was|were|have|has|can|could|would|will|should|shall)(?:n'?t)?", 'cannot', "won'?t", '(?:may|might) (?:i|we)',
     'tell (?:us|me)', 'give (?:us|me)', 'talk about', 'explain', 'describe', 'summari[sz]e', 'define', 'comment on', 'develop', 'elaborate',
     'expand on', 'justify', 'illustrate', 'clarify', 'rephrase', 'remind (?:us|me)',
+    'compare', 'discuss', 'present (?:your|the|us|me)','analy[sz]e', 'assess', 'evaluate', '(?:imagine|suppose) (?:you|that you|for a moment)','name (?:one|a|two|three|some)',
+    'take the (?:example|case) of', 'how so', 'what else', 'anything (?:else|to add)', 'any (?:other )?(?:example|idea|comment|thought)s?',
+    '(?:the )?(?:next|last|final) question',
     'in your (?:opinion|view|experience)', 'according to you', "let(?:'?s| us) (?:talk|discuss|focus|come back|go back)", 'let me ask',
     "i(?:'?d| would) like (?:you to|to (?:ask|know|hear))", 'i want you to',
     'my (?:next |last |final |first |second |other )?question', '(?:one|a) (?:more|last|final|quick|follow up) question', 'i have (?:a|another|one more|one last) question'
   ].join('|') + ')\\b');
-  const Q_NOT = /^(?:which (?:means|is why|explains|shows|leads)|what i (?:mean|want to say|wanted to say)|how (?:can|could|should) i (?:say|put it)|how do you say)\b/;
+  const Q_NOT = /^(?:which (?:means|is why|explains|shows|leads)|what (?:i|you) (?:mean|want to say|wanted to say)|how (?:can|could|should|do) i (?:say|put it)|how do you say|what (?:i|we) (?:[a-z']+ ){0,3}(?:is|was) (?:that|to) (?=[a-z])|what (?:is|was) (?:[a-z']+ ){1,2}(?:is|was) that (?=[a-z])|(?:could|can|would) you (?:please )?(?:repeat|say (?:it|that) again)(?: (?:the question|that|it|please))*$|what was the question|(?:can|may|could|shall) i (?:start|begin|continue|go on)|is it (?:ok|okay|alright|all right) if i (?:start|begin|continue|go on))\b/;
+  // Question-tag en fin de phrase : « …, isn't it », « don't you think ».
+  const Q_TAG = /\b(?:(?:is|are|was|were|do|does|did|can|could|will|would|should|has|have)n'?t (?:it|they|there|that|you|we|he|she)|don'?t you think|wouldn'?t you say|or not)$/;
   const Q_ANY = new RegExp('\\b(?:' + [
     "(?:do|does|did|would|could|can|will|should|don'?t|didn'?t|wouldn'?t|couldn'?t) you (?:think|agree|believe|say|tell|explain|give|describe|elaborate|develop|expand|comment|summari[sz]e|define|mean|know|feel|recommend|suggest|choose|prefer|like|want|remember|clarify|justify|illustrate|consider|expect|imagine|have)",
     '(?:what|why|how|which|where|when|who) (?:do|did|does|would|could|can|will|should|might) you',
@@ -773,9 +776,11 @@
       .map(p => ({ raw: p, rest: stripLead(normQ(p)) }))
       .filter(p => p.rest && !Q_FORMAL.test(p.rest));
     if (!parts.length) return false;
-    if (parts.some(p => /[?？][\s"'”’»)\]]*$/.test(p.raw))) return true;
+    // Question rhétorique de l'élève : « Why? Because… ».
+    if (parts.some((p, i) => i > 0 && /^because\b(?! of)/.test(p.rest) && words(parts[i - 1].rest) <= 2)) return false;
+    if (parts.some(p => /[?？][\s"'”’»)\]]*$/.test(p.raw) && !Q_NOT.test(p.rest.replace(/^what (?:i|you) (?:mean|want to say|wanted to say) is /, '')))) return true;
     if (words(parts.map(p => p.rest).join(' ')) < 3) return false;
-    return parts.some(p => (Q_ASK.test(p.rest) && !Q_NOT.test(p.rest)) || Q_ANY.test(p.rest));
+    return parts.some(p => !Q_NOT.test(p.rest) && (Q_ASK.test(p.rest) || Q_ANY.test(p.rest) || Q_TAG.test(p.rest)));
   }
 
   const KW_LINE = /(?:^|\s)[*_#>\s-]*(?:key ?words?|key expressions?|useful expressions?)\s*\**\s*[:：]/i;
@@ -877,34 +882,47 @@
     if (!question) throw err('NO_QUESTION', 'Aucune question du jury à traiter.');
     // Contexte réduit : la 1re réponse doit arriver en 1 à 2 s pendant l'appel.
     const expose = clipMiddle(transcriptText(o.expose), 1200, 600);
-    const turns = interviewText((Array.isArray(o.turns) ? o.turns : []).slice(-6), 1200);
-    const size = o.shorter ? '2 short sentences, 40 words maximum' : '3-5 short sentences, 75 words maximum';
+    // La question en cours figure souvent déjà comme dernier tour du jury : pas de doublon.
+    const recent = (Array.isArray(o.turns) ? o.turns : []).slice();
+    while (recent.length) {
+      const last = recent[recent.length - 1];
+      const lt = last && last.who === 'jury' ? String(last.text || '').trim() : '';
+      if (!lt || !question.includes(lt)) break;
+      recent.pop();
+    }
+    const turns = interviewText(recent.slice(-6), 1200);
+    const prev = o.shorter ? str(o.previous, 800) : '';
+    const size = o.shorter ? '2 short sentences, 25 words maximum' : '3 short sentences, 45 words maximum';
     const system = [
       'You are the candidate\'s English coach during a TRAINING mock oral for the French accounting diploma (DSCG UE6 / DSGC UE 218, business English, CEFR level B2 expected). The candidate has studied a press article and an exam question, has given a presentation, and is now questioned by the jury.',
-      'Write what the candidate can say right now to the jury: spoken English, in the first person, natural, B2 level, easy to read aloud, ' + size + ' in English. Each sentence 20 words maximum.',
+      'Write what the candidate can say right now to the jury: spoken English, first person, natural B2 level, ' + size + '. Each sentence 15 words maximum, one idea per sentence.',
       o.shorter
-        ? 'Give the direct answer, then one short reason or example.'
-        : 'Give the direct answer first, then one argument and one concrete example taken from the article or from 2025-2026 business news. Use simple linking words (first, because, for example, however, so).',
+        ? 'Sentence 1 answers the question directly in 12 words maximum, reusing the jury\'s key words (yes/no question: start with "Yes,", "No," or "Partly,"). Sentence 2 gives one short reason or example. No filler such as "That is a good question".'
+        : 'Sentence 1 answers the question directly in 12 words maximum, reusing the jury\'s key words (yes/no question: start with "Yes,", "No," or "Partly,"). Sentence 2 gives one reason. Sentence 3 gives one concrete example from the article, from the candidate\'s presentation or from the news below. Simple linking words only (because, for example, so, however). No filler such as "That is a good question".',
+      'Use common words a French B2 speaker can pronounce easily: no idioms, no rare words, no long numbers.',
+      'Use only facts and figures found in the article, the candidate\'s presentation or the news below; never invent a figure, a name or a date.',
+      'Stay consistent with the candidate\'s presentation (same problem statement, same opinion); you may start with "As I said in my presentation," when it helps. If the jury\'s words are a follow-up ("why?", "an example?", "and for firms?"), answer it in the light of the RECENT EXCHANGE.',
       'The candidate reads your answer as bilingual subtitles (English, then French). Use EXACTLY this plain-text format, one item per line, no markdown, no quotes, no preamble:',
-      'Q-FR: natural French translation of the jury\'s words',
       'EN: first sentence to say',
       'FR: its French translation',
       'EN: next sentence to say',
       'FR: its French translation',
       '(one EN line then one FR line for each sentence)',
       'Keywords: expression (traduction française); expression (traduction française); expression (traduction française)',
-      'The last line gives 3-5 useful English expressions from the answer, each followed by its short French translation in brackets.',
+      'The last line gives the 3 key English expressions of the answer (2-4 words each, the ones that carry the idea), each followed by its short French translation in brackets.',
       'The jury\'s words come from automatic speech recognition: if some words are wrong or missing, answer the most likely intended question.',
-      'If the jury\'s words are not a question or a request addressed to the candidate (greeting, sound check, thanks, instructions, small talk), output exactly "—" and nothing else (no Q-FR line).',
+      // « Répondre maintenant » (force) : l'élève demande une réponse, pas de saut.
+      o.force ? '' : 'If the words are not a question or request from the jury to the candidate (greeting, sound check, thanks, instructions such as "take your time", small talk, or the candidate speaking: a rhetorical question followed by "because", asking the jury to repeat), output exactly "—" and nothing else.',
       'Usable recent news (2025-2026), only if relevant: ' + NEWS.join(' ')
-    ].join('\n');
+    ].filter(Boolean).join('\n');
     const prompt = [
       subjectBrief(o.subject, { textMax: 1500 }),
       expose ? 'CANDIDATE\'S PRESENTATION (automatic transcript, may contain errors):\n' + expose : '',
       turns ? 'RECENT EXCHANGE (automatic transcript, may contain errors):\n' + turns : '',
+      prev ? 'PREVIOUS SUGGESTED ANSWER (keep the same idea, opinion and example, just shorter):\n' + prev : '',
       'JURY\'S WORDS JUST NOW (automatic transcript, may contain errors): ' + question,
       '',
-      'Write the candidate\'s answer now (' + size + '), as Q-FR / EN / FR subtitle lines.'
+      'Write the candidate\'s answer now (' + size + '), as EN / FR subtitle lines.'
     ].filter(Boolean).join('\n');
     // Flux : onDelta(texte anglais, { lines: [{ en, fr }], qFr }) à chaque nouveau morceau utile.
     let shown = '';
@@ -919,11 +937,11 @@
       shown = key;
       try { o.onDelta(out, { lines: p.lines, qFr: p.qFr }); } catch (e) {  }
     };
-    const r = await call({ purpose: 'live', stream: true, onDelta, system, prompt, temperature: 0.5, maxTokens: 800, timeoutMs: 15000, budgetMs: 30000, signal: o.signal });
+    const r = await call({ purpose: 'live', stream: true, onDelta, system, prompt, temperature: o.shorter ? 0.3 : 0.5, maxTokens: 800, timeoutMs: 15000, budgetMs: 30000, signal: o.signal });
     const parts = splitLive(r.text);
     if (parts.text && isSkip(parts.text)) return { text: '', keyWords: [], skip: true };
     const text = parts.text.replace(/^[—–]\s*/, '');
-    if (!text) throw err('EMPTY', 'Réponse vide de l’IA — réessayez.');
+    if (!text) throw err('EMPTY', 'L’IA n’a renvoyé aucun texte : appuyez sur « Réessayer ».');
     return { text, keyWords: parts.keyWords, skip: false, qFr: parts.qFr, lines: parts.lines, partial: !!r.partial };
   }
 

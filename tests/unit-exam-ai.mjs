@@ -194,6 +194,7 @@ test('liveNotes : sans clé ou réponse illisible → repérage local', async ()
   assert.equal(r.covered.source, true);
   assert.equal(r.covered.conclusion, true);
   assert.equal(r.covered.transition, false);
+  assert.deepEqual(r.tips, [], 'aucun message « IA indisponible »');
   const env2 = makeEnv({ replies: ['???'] });
   const r2 = await env2.x.liveNotes({ subject: SUBJECT, transcript: 'In conclusion this is a long enough transcript for the test.' });
   assert.equal(r2.source, 'local');
@@ -370,7 +371,15 @@ test('isJuryQuestion : questions et demandes du jury reconnues', () => {
     'Can you hear me? What do you think about stablecoins?',
     'Good morning Audrey. Talk about your professional experience',
     '   wHAT   would   YOU   do   in   their   place   ',
-    'thank you for your presentation now let\'s move on what do you think about the omnibus directive'
+    'thank you for your presentation now let\'s move on what do you think about the omnibus directive',
+    'Compare the two approaches',
+    'Take the example of Apple',
+    'Last question is AI a bubble',
+    'It is a risk for audit firms isn\'t it',
+    'Can you repeat your problem statement',
+    'What is the role of the auditor?',
+    'How important is that for firms',
+    'What exactly is that?'
   ].forEach(t => assert.equal(x.isJuryQuestion(t), true, 'question attendue : ' + JSON.stringify(t)));
 });
 
@@ -399,7 +408,11 @@ test('isJuryQuestion : vide, trop court, formules et vérifications de son exclu
     'Thank you. Can you hear me?',
     'The author explains that AI valuations are stretched.',
     'I think the author is right because valuations are very high.',
-    'which means that European firms will suffer'
+    'which means that European firms will suffer',
+    'What is interesting is that firms relocate',
+    'Why? Because tariffs raise prices.',
+    'Could you repeat the question please?',
+    'Can I start?'
   ].forEach(t => assert.equal(x.isJuryQuestion(t), false, 'pas une question : ' + JSON.stringify(t)));
 });
 
@@ -428,7 +441,7 @@ test('liveAnswer : prompt (sujet, question d’examen, mots du jury), flux sans 
   assert.doesNotMatch(c.prompt, /marker-[0-5]-end/, '6 derniers échanges seulement (contexte réduit)');
   assert.match(c.system, /Keywords: expression \(traduction française\)/, 'mots-clés avec traduction');
   assert.match(c.system, /TRAINING/);
-  assert.match(c.system, /75 words/);
+  assert.match(c.system, /45 words/);
   assert.match(c.system, /exactly "—"/);
   assert.match(c.system, /Keywords:/);
   assert.equal(r.skip, false);
@@ -466,12 +479,42 @@ test('liveAnswer : « Plus court » change la consigne', async () => {
   const env = makeEnv({ replies: [LIVE_REPLY, 'Tariffs hurt consumers. Prices go up.'] });
   await env.x.liveAnswer({ subject: SUBJECT, question: 'What about tariffs?' });
   const r = await env.x.liveAnswer({ subject: SUBJECT, question: 'What about tariffs?', shorter: true });
-  assert.match(env.calls[0].system, /75 words/);
-  assert.doesNotMatch(env.calls[0].system, /40 words/);
-  assert.match(env.calls[1].system, /2 short sentences, 40 words maximum/);
-  assert.doesNotMatch(env.calls[1].system, /75 words/);
-  assert.match(env.calls[1].prompt, /40 words maximum/);
+  assert.match(env.calls[0].system, /45 words/);
+  assert.doesNotMatch(env.calls[0].system, /25 words/);
+  assert.match(env.calls[1].system, /2 short sentences, 25 words maximum/);
+  assert.doesNotMatch(env.calls[1].system, /45 words/);
+  assert.match(env.calls[1].prompt, /25 words maximum/);
   assert.equal(r.text, 'Tariffs hurt consumers. Prices go up.');
+});
+
+test('liveAnswer : « Plus court » garde la réponse précédente (800 car.), température 0.3', async () => {
+  const env = makeEnv({ replies: [LIVE_REPLY, LIVE_REPLY, LIVE_REPLY] });
+  await env.x.liveAnswer({ subject: SUBJECT, question: 'What about tariffs?', previous: 'marker-prev' });
+  await env.x.liveAnswer({ subject: SUBJECT, question: 'What about tariffs?', shorter: true, previous: 'marker-prev ' + 'x'.repeat(2000) });
+  assert.equal(env.calls[0].temperature, 0.5);
+  assert.doesNotMatch(env.calls[0].prompt, /marker-prev|PREVIOUS SUGGESTED/, 'previous ignoré sans shorter');
+  assert.equal(env.calls[1].temperature, 0.3);
+  assert.match(env.calls[1].prompt, /PREVIOUS SUGGESTED ANSWER[^\n]*\n.*marker-prev/);
+  assert.ok(!env.calls[1].prompt.includes('x'.repeat(801)), 'réponse précédente tronquée');
+});
+
+test('liveAnswer : force → pas de consigne de saut, « — » reste un saut', async () => {
+  const env = makeEnv({ replies: [LIVE_REPLY, '—'] });
+  const r = await env.x.liveAnswer({ subject: SUBJECT, question: 'Good morning', force: true });
+  assert.doesNotMatch(env.calls[0].system, /exactly "—"/);
+  assert.equal(r.skip, false);
+  const r2 = await env.x.liveAnswer({ subject: SUBJECT, question: 'Good morning', force: true });
+  assert.deepEqual(plain(r2), { text: '', keyWords: [], skip: true });
+});
+
+test('liveAnswer : la question en cours n’est pas répétée dans RECENT EXCHANGE', async () => {
+  const env = makeEnv({ replies: [LIVE_REPLY, LIVE_REPLY] });
+  const turns = [{ who: 'student', text: 'marker-student' }, { who: 'jury', text: 'marker-q why tariffs' }];
+  await env.x.liveAnswer({ subject: SUBJECT, question: 'so marker-q why tariffs', turns });
+  assert.doesNotMatch(env.calls[0].prompt, /RECENT EXCHANGE[\s\S]*marker-q[\s\S]*JURY'S WORDS/);
+  assert.match(env.calls[0].prompt, /marker-student/);
+  await env.x.liveAnswer({ subject: SUBJECT, question: 'Why?', turns: [{ who: 'jury', text: '  ' }, { who: 'jury', text: 'marker-old' }] });
+  assert.match(env.calls[1].prompt, /marker-old/, 'tour différent de la question gardé');
 });
 
 const BI_REPLY = [
@@ -489,10 +532,10 @@ test('liveAnswer : sous-titres bilingues (Q-FR, paires EN / FR, mots-clés) en f
   const deltas = [];
   const r = await env.x.liveAnswer({ subject: SUBJECT, question: 'what about tariffs', onDelta: (t, info) => deltas.push({ t, info: plain(info) }) });
   const c = env.calls[0];
-  assert.match(c.system, /Q-FR: /);
+  assert.doesNotMatch(c.system, /Q-FR/);
   assert.match(c.system, /EN: first sentence/);
   assert.match(c.system, /FR: its French translation/);
-  assert.match(c.system, /no Q-FR line/);
+  assert.match(c.system, /exactly "—" and nothing else/);
   assert.equal(r.skip, false);
   assert.equal(r.text, BI_TEXT);
   assert.equal(r.qFr, 'Que pensez-vous des droits de douane ?');
@@ -542,7 +585,7 @@ test('liveAnswer : sans clé → NO_KEY ; réponse vide → EMPTY ; question abs
   await assert.rejects(env.x.liveAnswer({ subject: SUBJECT, question: 'Why?' }), e => e.code === 'NO_KEY' && /clé/.test(e.message));
   assert.equal(env.calls.length, 0);
   const env2 = makeEnv({ replies: ['', 'Keywords: a; b'] });
-  await assert.rejects(env2.x.liveAnswer({ subject: SUBJECT, question: 'Why?' }), e => e.code === 'EMPTY' && e.message === 'Réponse vide de l’IA — réessayez.');
+  await assert.rejects(env2.x.liveAnswer({ subject: SUBJECT, question: 'Why?' }), e => e.code === 'EMPTY' && e.message === 'L’IA n’a renvoyé aucun texte : appuyez sur « Réessayer ».');
   await assert.rejects(env2.x.liveAnswer({ subject: SUBJECT, question: 'Why?' }), e => e.code === 'EMPTY');
   await assert.rejects(env2.x.liveAnswer({ subject: SUBJECT, question: '  ' }), e => e.code === 'NO_QUESTION' && /question/.test(e.message));
   assert.equal(env2.calls.length, 2);

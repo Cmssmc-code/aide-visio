@@ -106,7 +106,6 @@
     const t = teamsValid(link);
     if (!t) { toast(LINK_BAD, 'warn', { duration: 7000 }); return false; }
     window.open(t, '_blank', 'noopener');
-    toast(`Ouverture de la réunion ${meetingApp(t)} dans un nouvel onglet.`, 'ok');
     return true;
   }
   function teamsMessage(link, dateText) {
@@ -1035,6 +1034,7 @@
       const speaking = () => Date.now() < (C.speakingUntil || 0);
       A.offs.push(S.audio.on('final', (ev) => { if (ev && ev.text && !speaking()) C.onHeard(roleOf(ev.who), str(ev.text).trim(), ev); }));
       A.offs.push(S.audio.on('interim', (ev) => { if (ev && interimRoles.includes(roleOf(ev.who)) && !speaking()) { A.interim = ev.text === '…' ? '' : str(ev.text); C.paintInterim(); } }));
+      A.offs.push(S.audio.on('speech', (ev) => { if (ev && interimRoles.includes(roleOf(ev.who))) { A.juryTalk = !!ev.active; if (C.paintInterim) C.paintInterim(); } }));
       A.offs.push(S.audio.on('state', (ev) => {
         if (!ev) return;
         if (ev.state === 'error') {
@@ -1047,7 +1047,7 @@
       A.offs.push(S.audio.on('ended', (ev) => {
         const msg = (ev && ev.reason === 'display-ended' && S.audio.message && S.audio.message('DISPLAY_ENDED')) ||
           (ev && ev.reason === 'track-ended' ? 'Le micro s’est coupé (débranché ou pris par une autre application).' : 'Le son s’est coupé : plus rien n’est capté.');
-        toast(msg, 'warn', { duration: 9000 });
+        if (!o.call) toast(msg, 'warn', { duration: 9000 });
         stop({ drainMs: 0 }).then(() => { A.state = 'error'; A.error = msg; A.errorCode = 'ENDED'; if (C.alive) C.paintListen(); });
       }));
       try {
@@ -1065,7 +1065,7 @@
         A.on = true;
         // Une erreur survenue pendant le démarrage n'est pas écrasée : on montre le toast retenu.
         if (A.state === 'error') toast(A.error, 'err', { duration: 9000 });
-        else { A.state = 'listening'; toast(split() ? 'Écoute du son de l’appel lancée.' : 'Écoute du micro lancée.', 'ok'); }
+        else { A.state = 'listening'; if (!o.call) toast(split() ? 'Écoute du son de l’appel lancée.' : 'Écoute du micro lancée.', 'ok'); }
         C.wantsWake = true; keepAwake(true);
       } catch (e) {
         unsub();
@@ -1073,7 +1073,7 @@
         if (!A.cancelled && C.alive) {
           const msg = (e && e.code && S.audio.message && S.audio.message(e.code)) || errMsg(e);
           A.error = msg; A.errorCode = str(e && e.code);
-          toast(msg + (o.call ? '' : ' La console reste utilisable (notes manuelles).'), 'err', { duration: 9000 });
+          if (!o.call) toast(msg + ' La console reste utilisable (notes manuelles).', 'err', { duration: 9000 });
         }
       } finally { A.starting = false; if (C.alive) C.paintListen(); }
     }
@@ -1111,7 +1111,7 @@
     const primary = A.on ? 'btn-danger' : o.quiet ? '' : 'btn-primary';
     const blocked = !A.on && o.blocked;
     const onErr = A.on && A.state === 'error';
-    const stLabel = blocked ? o.blocked : A.starting ? 'Démarrage…' : onErr ? (A.error || 'Écoute en erreur') : A.on ? (o.onLabel || 'J’écoute l’élève (en-GB)') : A.state === 'error' ? 'Écoute en erreur' : 'Écoute arrêtée';
+    const stLabel = blocked ? o.blocked : A.starting ? 'Démarrage…' : onErr ? (A.error || 'Écoute arrêtée.') : A.on ? (o.onLabel || 'J’écoute l’élève (en-GB)') : A.state === 'error' ? (A.error || 'Écoute arrêtée.') : 'Écoute arrêtée';
     return `<div class="ex-listen ${A.on ? 'on' : ''}">
 <div class="ex-src"${sources.length < 2 ? ' hidden' : ''} role="radiogroup" aria-label="Source du son">${sources.map((x) => `<button type="button" class="ex-src-opt${sel === x.id ? ' on' : ''}" role="radio" aria-checked="${sel === x.id}" data-src="${x.id}"${A.on || A.starting ? ' disabled' : ''}>
         <span class="ex-src-ic">${icon(x.ic)}</span><span class="ex-src-t"><b>${esc(x.label)}${x.rec ? ' <span class="pill pill-xs pill-ok">Recommandé</span>' : ''}</b><small>${esc(x.sub)}</small></span></button>`).join('')}</div>
@@ -2830,7 +2830,7 @@
   }
 
   const NO_KEY_LIVE = 'Pas de clé IA : ajoutez-en une dans Réglages.';
-  const OLD_AI = 'Aide en direct indisponible : rechargez la page (Aide Visio vient d’être mis à jour).';
+  const OLD_AI = 'Aide Visio vient d’être mis à jour : rechargez la page pour l’aide en direct.';
   const JOIN_MS = 8000;
 
   function copyStylesTo(doc) {
@@ -2843,6 +2843,20 @@
     });
   }
 
+  // Lien vide : l'erreur s'affiche dans le champ, pas dans un toast.
+  function linkEmpty(root, f) {
+    const box = $('[data-b="teams"]', root), hint = $('[data-b="teams-hint"]', root);
+    if (box) box.classList.add('is-bad');
+    if (hint) hint.textContent = 'Collez d’abord le lien Teams ou Meet reçu par mail ou par message.';
+    if (f) { f.setAttribute('aria-invalid', 'true'); f.focus(); }
+  }
+  function linkEnter(e) {
+    if (e.key !== 'Enter' || !e.target.matches || !e.target.matches('[data-f="teams"]')) return;
+    e.preventDefault();
+    const b = $('[data-act="teams-join"]', e.currentTarget);
+    if (b) b.click();
+  }
+
   function renderTeamsStart(root) {
     const link = teamsValid(prefs().studentTeams || '');
     const start = (subj) => {
@@ -2852,7 +2866,7 @@
     };
     root.innerHTML = `<div class="screen ex ex-chooser lv-start-screen">
       ${topbar({ title: 'Entraînement sur Teams', sub: 'Avec un jury en visio', back: '#/' })}
-      <p class="ex-call-intro muted">Le jury vous donne le sujet pendant l’appel. Importez-le ici, puis lancez l’assistant : il écoute les questions et affiche une réponse en anglais, en grand.</p>
+      <p class="ex-call-intro muted">Le jury vous envoie le sujet pendant l’appel : importez-le, puis lancez l’assistant.</p>
       <ol class="lv-steps">
         <li class="card card-pad lv-step">
           <span class="lv-step-n" aria-hidden="true">1</span>
@@ -2870,7 +2884,8 @@
         <li class="card card-pad lv-step">
           <span class="lv-step-n" aria-hidden="true">3</span>
           <div class="lv-step-b"><h2 class="h3">Lancer l’assistant</h2>
-            <p class="muted">${isMobileDevice() ? 'Un seul bouton : l’écoute démarre et la réponse s’affiche en grand. Posez le téléphone juste sous la caméra.' : 'Un seul bouton : l’écoute démarre et la réponse s’affiche dans une fenêtre à placer juste sous la caméra.'}</p>
+            <p class="muted">${isMobileDevice() ? 'Après l’import, « Lancer l’assistant » démarre l’écoute et affiche la réponse en grand. Posez le téléphone juste sous la caméra.' : 'Après l’import, « Lancer l’assistant » démarre l’écoute et ouvre une fenêtre à placer juste sous la caméra.'}</p>
+            <button type="button" class="btn btn-quiet btn-sm" data-act="start-blank">${icon('mic')}<span>Commencer sans sujet</span></button>
           </div>
         </li>
       </ol>
@@ -2880,6 +2895,8 @@
       const l = teamsValid(v);
       const box = $('[data-b="teams"]', root), hint = $('[data-b="teams-hint"]', root);
       if (box) { box.classList.toggle('is-bad', !l && !!str(v).trim()); box.classList.toggle('is-set', !!l); }
+      const f = $('[data-f="teams"]', root);
+      if (f && (l || !str(v).trim())) f.removeAttribute('aria-invalid');
       if (l) setPrefs({ studentTeams: l });
       if (hint) hint.textContent = l ? `Lien ${meetingApp(l)} enregistré : « Rejoindre » ouvre la réunion.` : str(v).trim() ? LINK_BAD : 'Collez le lien reçu par mail ou par message.';
       return l;
@@ -2888,10 +2905,11 @@
       const b = e.target.closest('[data-act]');
       if (!b) return;
       if (b.dataset.act === 'import') importSubjectSheet(start);
+      else if (b.dataset.act === 'start-blank') start({ title: 'Sujet à venir', paragraphs: [], question: '' });
       else if (b.dataset.act === 'teams-join') {
         const f = $('[data-f="teams"]', root);
         const v = f ? f.value.trim() : '';
-        if (!v) { toast('Collez d’abord le lien Teams ou Meet reçu par mail ou message.', 'warn'); if (f) f.focus(); return; }
+        if (!v) { linkEmpty(root, f); return; }
         const l = setHint(v);
         if (l && f) f.value = l;
         openTeams(v);
@@ -2903,18 +2921,20 @@
       const l = setHint(f.value);
       if (l) f.value = l;
     });
+    root.addEventListener('keydown', linkEnter);
     setCurrent({});
   }
 
   function renderCall(root, s) {
     const C = baseController(root, s);
     const call = s.call;
-    const R = { ctrl: null, req: null, item: null, busy: false, partial: '', lines: [], float: null, jury: [], err: '', errKind: '', warn: '' };
+    const R = { ctrl: null, req: null, item: null, busy: false, partial: '', lines: [], float: null, jury: [], err: '', errKind: '', warn: '', born: 0, mode: '', raf: 0, lastErr: '', lastK: '', ending: false, floatPending: false };
     const L = createListen(C, {
       call: true, prefKey: 'callListenPreset',
       roleOf: (who, split) => (split ? (who === 'me' ? 'student' : 'jury') : 'mixed'),
       interimRoles: ['jury', 'mixed'],
-      onStop: () => { closeFloat(); C.wantsWake = false; keepAwake(false); if (C.alive) paintLive(); }
+      // La fenêtre flottante reste ouverte si le son coupe : elle affiche l'erreur et « Relancer ».
+      onStop: () => { C.wantsWake = false; keepAwake(false); if (C.alive) paintLive(); }
     });
     C.L = L;
     const desk = !isMobileDevice();
@@ -2926,11 +2946,20 @@
     const isQ = (t) => { try { return aiHas('isJuryQuestion') ? !!S.examAI.isJuryQuestion(t) : /\?\s*$/.test(t); } catch (e) { return false; } };
     const shown = () => R.item || call.answers[call.answers.length - 1] || null;
     document.body.classList.add('ex-focus');
+    function subjectCard() {
+      const has = s.subject.paragraphs.length > 0;
+      return `<details class="card card-pad ex-details ex-call-subject"${has ? '' : ' open'}><summary><b>Sujet</b><span class="small muted" lang="en"> · ${esc(s.subject.title)}</span></summary>
+        ${has ? subjectHTML(s.subject) : ''}
+        <button type="button" class="btn btn-sm" data-act="import-subject">${icon('import')}<span>${has ? 'Changer de sujet' : 'Importer le sujet'}</span></button>
+      </details>`;
+    }
+    const endBtn = (done) => `<button type="button" class="btn" data-act="end" data-b="end"${done ? ' disabled' : ''}>${icon('stop')}<span>${done ? 'Appel terminé' : 'Terminer l’appel'}</span></button>`;
 
     root.innerHTML = `<div class="screen ex ex-call">
       ${topbar({ title: 'Entraînement sur Teams', sub: s.subject.title, back: '#/' })}
+      <span class="sr-only" data-b="call-sr" aria-live="polite"></span>
       <div class="lv-body">
-        <section class="card ex-live lv-stage" data-b="live" data-theme="dark" aria-live="polite"></section>
+        <section class="card ex-live lv-stage" data-b="live" data-theme="dark"></section>
         <aside class="lv-side" aria-label="Appel, son, sujet et historique">
           <section class="card card-pad ex-call-meet">
             <div class="card-head"><h2 class="h3">Rejoindre l’appel</h2></div>
@@ -2940,18 +2969,24 @@
             <div class="card-head"><h2 class="h3">Son de l’appel</h2></div>
             <div data-b="listen"></div>
           </section>
-          <details class="card card-pad ex-details ex-call-subject"><summary><b>Sujet</b><span class="small muted" lang="en"> · ${esc(s.subject.title)}</span></summary>${subjectHTML(s.subject)}</details>
+          ${subjectCard()}
           <section class="card card-pad ex-call-hist">
             <div class="card-head"><h2 class="h3">Historique de l’appel</h2><span class="spacer"></span><span class="badge" data-b="hist-n">0</span></div>
             <div data-b="hist"></div>
             <div class="ex-actions-row">
               <button type="button" class="btn" data-act="export">${icon('download')}<span>Exporter (.md)</span></button>
-              <button type="button" class="btn" data-act="end">${icon('stop')}<span>Terminer l’appel</span></button>
+              ${endBtn(!!call.endedAt)}
             </div>
           </section>
         </aside>
       </div>
     </div>`;
+    C.say = (t) => {
+      const el = $('[data-b="call-sr"]', root);
+      if (!el) return;
+      el.textContent = '';
+      setTimeout(() => { if (C.alive) el.textContent = t; }, 60);
+    };
 
     const NO_KEY_START = 'Pas de clé IA : l’assistant ne peut pas proposer de réponse. Ajoutez une clé dans Réglages.';
     // Erreur précise + bouton d'action adapté à la cause.
@@ -2967,29 +3002,33 @@
     function errHTML(msg, kind, float) {
       const b = (act, ic, label, primary) => `<button type="button" class="btn btn-sm${primary ? ' btn-primary' : ''}" data-act="${act}">${icon(ic)}<span>${label}</span></button>`;
       const btns = [];
-      if (kind === 'key') btns.push(float ? b('settings', 'gear', 'Réglages') : `<button type="button" class="btn btn-sm" data-go="#/settings">${icon('gear')}<span>Réglages</span></button>`);
+      if (kind === 'key') btns.push(float ? b('settings', 'gear', 'Réglages') : `<button type="button" class="btn btn-sm btn-primary" data-go="#/settings">${icon('gear')}<span>Réglages</span></button>`);
+      else if (kind === 'old') btns.push(b('reload', 'refresh', 'Recharger la page', true));
       else if (kind === 'mic') { btns.push(b('assist', 'refresh', 'Réessayer', true)); if (!float) btns.push(b('pick-src', 'speaker', 'Changer de source')); }
       else if (kind === 'pc') { btns.push(b('use-mic', 'mic', 'Utiliser le micro', true)); btns.push(b('assist', 'refresh', 'Réessayer')); }
       else if (kind === 'lost') btns.push(b('assist', 'mic', 'Relancer l’assistant', true));
       else if (kind === 'listen') btns.push(b('assist', 'refresh', 'Réessayer'));
       else if (kind === 'answer') btns.push(b('retry', 'refresh', 'Réessayer'));
-      return `<div class="ex-live-err lv-err" role="alert">${icon('warning', 'ico-inline')}<span>${esc(msg)}</span>${btns.length ? `<span class="lv-err-btns">${btns.join('')}</span>` : ''}</div>`;
+      // role="alert" seulement pour une erreur nouvelle : un repaint ne la réannonce pas.
+      const role = msg !== R.lastErr ? 'alert' : 'group';
+      R.errNow = msg;
+      return `<div class="ex-live-err lv-err" role="${role}">${icon('warning', 'ico-inline')}<span>${esc(msg)}</span>${btns.length ? `<span class="lv-err-btns">${btns.join('')}</span>` : ''}</div>`;
     }
     function warnHTML() {
-      return R.warn && L.A.on ? `<p class="lv-warn" role="status">${icon('info', 'ico-inline')}<span>${esc(R.warn)}</span></p>` : '';
+      return R.warn && L.A.on ? `<p class="lv-warn" role="status">${icon('warning', 'ico-inline')}<span>${esc(R.warn)}</span></p>` : '';
     }
     // ---- Sous-titres bilingues : question du jury, réponse phrase par phrase (EN puis FR), mots-clés ----
     function statusInfo(busy, a) {
       if (L.A.starting) return ['Démarrage…', 'start'];
       if (!L.A.on) return ['Assistant arrêté', 'off'];
-      if (L.A.interim) return ['Le jury parle…', 'talk'];
+      if (L.A.interim) return L.A.juryTalk === false ? ['Question reçue…', 'busy'] : ['Le jury parle…', 'talk'];
       if (busy) return ['Réponse en cours…', 'busy'];
       if (a && a.text && !a.error) return ['Réponse prête', 'ready'];
       return ['J’écoute…', 'listen'];
     }
     function statusHTML(busy, a) {
       const [label, k] = statusInfo(busy, a);
-      return `<span class="lv-status${L.A.on ? ' on' : ''}" data-k="${k}" data-b="status" role="status"><span class="ex-live-dot${L.A.on ? ' on' : ''}" aria-hidden="true"></span><b data-b="status-l">${label}</b></span>`;
+      return `<span class="lv-status${L.A.on ? ' on' : ''}" data-k="${k}" data-b="status"><span class="ex-live-dot${L.A.on ? ' on' : ''}" aria-hidden="true"></span><b data-b="status-l">${label}</b></span>`;
     }
     // Mot-clé « expression (traduction) » → expression anglaise · traduction française.
     function kwHTML(k) {
@@ -3005,74 +3044,89 @@
     }
     const lineHTML = (l, isNew) => `<p class="lv-line${isNew ? ' is-new' : ''}"><span class="lv-en" lang="en">${esc(l.en)}</span><span class="lv-tr" lang="fr">${esc(str(l.fr))}</span></p>`;
     // Outils de la réponse (discrets) et de la vue (fenêtre flottante, plein écran, arrêt).
-    function answerTools() {
+    const askNowBtn = (short) => `<button type="button" class="btn btn-sm lv-ghost" data-act="ask-now" title="Répondre à ce que le jury vient de dire (touche Espace)" aria-keyshortcuts="Space">${icon('refresh')}<span>${short ? 'Répondre' : 'Répondre maintenant'}</span></button>`;
+    function answerTools(busy, float) {
+      const t = (act, ic, label, busyLabel, title, key) => {
+        const on = busy && R.mode === act;
+        return `<button type="button" class="btn btn-sm lv-ghost${on ? ' on' : ''}" data-act="${act}" title="${title}" aria-keyshortcuts="${key}"${on ? ' aria-disabled="true"' : ''}>${icon(ic)}<span>${on ? busyLabel : label}</span></button>`;
+      };
       return `<div class="ex-live-actions lv-tools lv-atools">
-        <button type="button" class="btn btn-sm lv-ghost" data-act="shorter" title="Réponse plus courte (2 phrases)">${icon('text-size')}<span>Plus court</span></button>
-        <button type="button" class="btn btn-sm lv-ghost" data-act="retry" title="Nouvelle réponse">${icon('refresh')}<span>Réessayer</span></button>
+        ${float && L.A.on ? askNowBtn(true) : ''}
+        ${t('shorter', 'text-size', 'Plus court', 'Plus court…', 'Réponse plus courte (touche C)', 'C')}
+        ${t('retry', 'refresh', 'Réessayer', 'Nouvelle réponse…', 'Nouvelle réponse (touche R)', 'R')}
       </div>`;
     }
     function viewTools() {
       if (!L.A.on) return '';
-      const t = [`<button type="button" class="btn btn-sm lv-ghost${R.float ? ' on' : ''}" data-act="float" aria-pressed="${!!R.float}" title="Garder les sous-titres au premier plan, au-dessus de Teams">${icon('pip')}<span>Fenêtre flottante</span></button>`];
-      if (canFull()) t.push(`<button type="button" class="btn btn-sm lv-ghost${isFull() ? ' on' : ''}" data-act="full" aria-pressed="${isFull()}" title="Sous-titres en plein écran (Échap pour sortir)">${icon('eye')}<span>${isFull() ? 'Quitter le plein écran' : 'Plein écran'}</span></button>`);
+      const t = [askNowBtn()];
+      if (desk) t.push(`<button type="button" class="btn btn-sm lv-ghost${R.float ? ' on' : ''}" data-act="float" aria-pressed="${!!R.float}" aria-keyshortcuts="P" title="Garder la réponse au premier plan, au-dessus de Teams (touche P)"${R.floatPending ? ' aria-disabled="true"' : ''}>${icon('pip')}<span>${R.floatPending ? 'Ouverture…' : 'Fenêtre flottante'}</span></button>`);
+      if (canFull()) t.push(`<button type="button" class="btn btn-sm lv-ghost${isFull() ? ' on' : ''}" data-act="full" aria-pressed="${isFull()}" aria-keyshortcuts="F" title="Réponse en plein écran (touche F, Échap pour sortir)">${icon('eye')}<span>${isFull() ? 'Quitter le plein écran' : 'Plein écran'}</span></button>`);
       t.push(`<button type="button" class="btn btn-sm lv-ghost" data-act="listen-stop" title="Arrêter l’écoute">${icon('stop')}<span>Arrêter</span></button>`);
       return `<div class="ex-live-actions lv-tools lv-vtools">${t.join('')}</div>`;
     }
+    // Fenêtre flottante : seule la fin de la phrase entendue tient sur une ligne.
+    const tailOf = (t, n) => (t.length > n ? '…' + t.slice(-n).replace(/^\S*\s+/, '') : t);
     // Bloc « Jury » : question entendue (EN) + traduction (FR). Pendant que le jury parle,
     // la phrase entendue s'y affiche en direct à la place de la question précédente.
-    function juryHTML(a) {
+    function juryHTML(a, float) {
       const fr = a ? str(a.fr) : '';
       return `<div class="${a ? 'ex-live-q lv-q' : 'lv-q lv-q-live'}">
         <span class="lv-q-tag" aria-hidden="true">Jury</span>
         <div class="lv-q-body">
           ${a ? `<p class="lv-q-en ex-live-en" lang="en">${esc(a.question)}</p>
           <p class="lv-q-fr" lang="fr"${fr ? '' : ' hidden'}><span class="ex-live-fr" data-b="fr">${esc(fr)}</span></p>` : ''}
-          <p class="lv-interim ex-live-interim" data-b="interim" lang="en">${esc(L.A.interim)}</p>
-          <p class="lv-q-wait" lang="fr">Traduction dès la fin de la question…</p>
+          <p class="lv-interim ex-live-interim" data-b="interim" lang="en">${esc(float ? tailOf(L.A.interim, 72) : L.A.interim)}</p>
         </div>
       </div>`;
     }
     function liveHTML(float) {
       const a = shown();
       const busy = R.busy && R.item === a;
-      const listenErr = !L.A.on && !L.A.starting && L.A.state === 'error' && L.A.error ? errHTML(L.A.error, listenKind(L.A.errorCode), float) : '';
-      const startErr = R.err ? errHTML(R.err, R.errKind, float) : '';
-      if (!aiHas('liveAnswer')) return `<div class="lv-empty">${errHTML(OLD_AI, '', float)}</div>`;
+      const lErr = !L.A.on && !L.A.starting && L.A.state === 'error' && !!L.A.error;
+      const errBox = () => (R.err ? errHTML(R.err, R.errKind, float) : lErr ? errHTML(L.A.error, listenKind(L.A.errorCode), float) : '');
+      if (!aiHas('liveAnswer')) return `<div class="lv-empty">${errHTML(OLD_AI, 'old', float)}</div>`;
       if (!L.A.on && !L.A.starting && !a) {
+        // Sans clé IA, la cause est visible avant le clic ; le bouton reste actif.
+        const noKey = !aiReady();
+        const e = R.err || lErr ? errBox() : noKey ? errHTML(NO_KEY_START, 'key', float) : '';
         return `<div class="lv-start">
           <span class="lv-start-ic" aria-hidden="true">${icon('waveform')}</span>
-          <h2 class="lv-start-t">Sous-titres en direct</h2>
-          <p class="lv-start-p">L’assistant écoute le jury et affiche la question et une réponse à dire, phrase par phrase : <b lang="en">en anglais</b>, avec le français juste dessous.</p>
-          <button type="button" class="btn btn-primary btn-lg lv-go" data-act="assist">${icon('mic')}<span>Lancer l’assistant</span></button>
-          ${startErr || listenErr}
+          <h2 class="lv-start-t">Réponses en direct</h2>
+          <p class="lv-start-p">L’assistant écoute le jury et vous propose une réponse à dire, <b lang="en">en anglais</b>, avec le français dessous.</p>
+          <button type="button" class="btn${noKey ? '' : ' btn-primary'} btn-lg lv-go" data-act="assist">${icon('mic')}<span>Lancer l’assistant</span></button>
+          ${e}
           <p class="lv-tip">${icon('video', 'ico-inline')}<span>${desk ? 'Placez la fenêtre flottante juste sous la caméra.' : 'Posez le téléphone juste sous la caméra.'}</span></p>
         </div>`;
       }
       const relaunch = !L.A.on && !L.A.starting && !float ? `<button type="button" class="btn btn-primary btn-sm" data-act="assist">${icon('mic')}<span>Relancer l’assistant</span></button>` : '';
-      const head = `<div class="ex-live-head lv-head">${statusHTML(busy, a)}<span class="spacer"></span>${!float && isFull() ? `<span class="lv-esc">Échap pour sortir du plein écran</span>` : ''}${float ? '' : viewTools()}${relaunch}</div>${warnHTML()}`;
+      const head = `<div class="ex-live-head lv-head">${statusHTML(busy, a)}<span class="spacer"></span>${float ? '' : viewTools()}${relaunch}</div>${warnHTML()}`;
       if (!a) {
-        return `${head}
-          ${juryHTML(null)}
+        // Fenêtre flottante : l'état reste en bas, comme quand une réponse est affichée.
+        return `${float ? warnHTML() : head}
+          ${juryHTML(null, float)}
           <div class="lv-empty">
-            <p class="ex-live-empty lv-wait">${float ? 'Les sous-titres s’afficheront ici dès que le jury pose une question.' : 'Dès que le jury pose une question, les sous-titres s’affichent ici, en anglais et en français.'}</p>
+            <p class="ex-live-empty lv-wait">${float ? 'La réponse s’affichera ici.' : 'La réponse s’affichera ici dès la question du jury.'}</p>
             ${float || R.float ? `<p class="lv-tip">${icon('video', 'ico-inline')}<span>${float ? 'Glissez cette fenêtre juste sous la caméra.' : 'Fenêtre flottante ouverte : placez-la juste sous la caméra.'}</span></p>` : ''}
-          </div>${startErr || listenErr}`;
+          </div>
+          ${float ? `<div class="lv-foot">${statusHTML(busy, a)}${L.A.on ? `<div class="ex-live-actions lv-tools lv-atools">${askNowBtn(true)}</div>` : ''}</div>` : ''}${errBox()}`;
       }
       const lines = linesFor(a, busy);
       // Fenêtre flottante : pas de ligne d'en-tête, l'état passe dans le pied (plus de place pour les sous-titres).
       const top = float ? warnHTML() : head;
       const st = float ? statusHTML(busy, a) : '';
       const kw = !busy && arr(a.keyWords).length ? `<div class="ex-live-kw lv-kw" aria-label="Mots-clés">${a.keyWords.map(kwHTML).join('')}</div>` : '<span class="lv-kw-gap"></span>';
+      const ek = a.errKey || a.error === NO_KEY_LIVE ? 'key' : 'answer';
       return `${top}
-        ${juryHTML(a)}
+        ${juryHTML(a, float)}
         <div class="ex-live-a lv-a" data-b="ans-wrap">
           <div class="ex-live-ans lv-ans${busy ? ' is-streaming' : ''}" data-b="ans" aria-label="Réponse proposée">${lines.map((l) => lineHTML(l)).join('')}</div>
         </div>
-        ${!busy && a.error ? errHTML(a.error, a.errKey || a.error === NO_KEY_LIVE ? 'key' : '', float) : ''}
-        <div class="lv-foot">${st}${kw}${answerTools()}</div>
-        ${startErr || listenErr}`;
+        ${!busy && a.error ? errHTML(a.error, ek, float) : ''}
+        <div class="lv-foot">${st}${kw}${a.error && !a.text ? '' : answerTools(busy, float)}</div>
+        ${errBox()}`;
     }
-    const views = () => [$('[data-b="live"]', root)].concat(R.float ? [R.float.box] : []).filter(Boolean);
+    // Page cachée (Teams au premier plan) : seule la fenêtre flottante est repeinte.
+    const views = () => { const main = $('[data-b="live"]', root); const fl = R.float ? [R.float.box] : []; return (document.hidden && fl.length ? fl : [main].concat(fl)).filter(Boolean); };
     // Taille des sous-titres : la plus grande qui tient en entier ; en dessous du minimum, défilement doux.
     function fitAns(box) {
       const el = box && $('[data-b="ans"]', box);
@@ -3080,18 +3134,33 @@
       if (!el || !wrap) return;
       const inFloat = box === (R.float && R.float.box);
       const full = !inFloat && box.matches && box.matches(':fullscreen');
-      if (!(inFloat || full || wide())) { el.style.fontSize = ''; wrap.classList.remove('is-scroll'); return; }
+      if (!(inFloat || full || wide())) { el.style.fontSize = ''; wrap.classList.remove('is-scroll'); delete box.dataset.fitPx; return; }
       const w = wrap.clientWidth || 600;
       const min = inFloat ? 22 : full ? 32 : 24;
-      const cap = Math.max(min, Math.min(inFloat ? 38 : full ? 72 : 44, w / (full ? 15 : 17)));
+      const cap = Math.max(min, Math.min(inFloat ? 30 : full ? 56 : 34, w / (full ? 15 : 17)));
       const id = (shown() || {}).id || '';
       let hi = cap;
-      if (R.busy && box.dataset.fitFor === id && parseFloat(el.style.fontSize)) hi = Math.max(min, Math.min(cap, parseFloat(el.style.fontSize)));
+      // Même réponse : la taille ne remonte pas pendant le flux (pas de saut) ; elle est recalculée à la fin.
+      const last = parseFloat(box.dataset.fitPx);
+      const same = box.dataset.fitFor === id;
+      if (R.busy && same && last) hi = Math.max(min, Math.min(cap, last));
       box.dataset.fitFor = id;
       const fits = () => wrap.scrollHeight <= wrap.clientHeight + 1;
+      const keep = () => { box.dataset.fitPx = parseFloat(el.style.fontSize) || ''; };
+      // Pendant le flux : deux relectures de mise en page au plus.
+      if (R.busy && same && last) {
+        el.style.fontSize = hi + 'px';
+        if (!fits()) {
+          const next = Math.max(min, Math.floor(hi * 0.92));
+          el.style.fontSize = next + 'px';
+          wrap.classList.toggle('is-scroll', next === min && !fits());
+        } else wrap.classList.remove('is-scroll');
+        keep();
+        return;
+      }
       let lo = min;
       el.style.fontSize = hi + 'px';
-      if (fits()) { wrap.classList.remove('is-scroll'); return; }
+      if (fits()) { wrap.classList.remove('is-scroll'); keep(); return; }
       for (let i = 0; i < 8; i++) {
         const mid = (lo + hi) / 2;
         el.style.fontSize = mid + 'px';
@@ -3099,19 +3168,33 @@
       }
       el.style.fontSize = Math.floor(lo) + 'px';
       wrap.classList.toggle('is-scroll', !fits());
+      keep();
     }
+    // Focus clavier gardé sur le même bouton après une réécriture.
+    const keepFocus = (v) => { const a = v.ownerDocument.activeElement; return a && v.contains(a) && a.dataset && a.dataset.act ? a.dataset.act : ''; };
+    const backFocus = (v, act) => { if (!act) return; const b = v.querySelector('[data-act="' + act + '"]'); if (b) b.focus({ preventScroll: true }); };
     function paintLive() {
       if (!C.alive) return;
+      R.errNow = '';
       const box = $('[data-b="live"]', root);
-      box.classList.toggle('is-on', L.A.on);
-      box.classList.toggle('has-interim', !!(L.A.on && L.A.interim));
-      box.innerHTML = liveHTML(false);
-      fitAns(box);
-      if (R.float) {
-        R.float.box.classList.toggle('is-on', L.A.on);
-        R.float.box.classList.toggle('has-interim', !!(L.A.on && L.A.interim));
-        R.float.box.innerHTML = liveHTML(true);
-        fitAns(R.float.box);
+      const paint = (v, float) => {
+        const f = keepFocus(v);
+        v.classList.toggle('is-on', L.A.on);
+        v.classList.toggle('has-interim', !!(L.A.on && L.A.interim));
+        v.innerHTML = liveHTML(float);
+        fitAns(v);
+        backFocus(v, f);
+      };
+      paint(box, false);
+      if (R.float) paint(R.float.box, true);
+      R.lastErr = R.errNow;
+      // Annonce courte au lecteur d'écran quand l'état change (pas toute la scène).
+      const a = shown();
+      const [label, k] = statusInfo(R.busy && R.item === a, a);
+      if (k !== R.lastK) {
+        if (k === 'ready') C.say('Réponse prête : ' + str(((a && arr(a.lines)[0]) || {}).en || (a && a.text) || ''));
+        else if ((k === 'off' && R.lastK) || (k === 'listen' && R.lastK === 'start')) C.say(label);
+        R.lastK = k;
       }
     }
     // Flux : phrases mises à jour sur place, les nouvelles apparaissent en fondu (pas de clignotement).
@@ -3127,7 +3210,7 @@
     }
     function paintAnswer() {
       const a = R.item;
-      if (!a || shown() !== a) return;
+      if (!a || !R.busy || shown() !== a) return;
       const lines = linesFor(a, true);
       views().forEach((v) => {
         const el = $('[data-b="ans"]', v);
@@ -3136,6 +3219,18 @@
         syncLines(el, lines);
         fitAns(v);
       });
+    }
+    // Flux : une peinture par image (celle de la fenêtre flottante si elle est ouverte).
+    function paintSoon() {
+      if (R.raf) return;
+      const w = R.rafWin = R.float && R.float.win && R.float.win.requestAnimationFrame ? R.float.win : (!document.hidden ? window : null);
+      const run = () => { R.raf = 0; paintAnswer(); };
+      R.raf = w ? w.requestAnimationFrame(run) : setTimeout(run, 33);
+    }
+    function dropRaf() {
+      if (!R.raf) return;
+      try { if (R.rafWin) R.rafWin.cancelAnimationFrame(R.raf); else clearTimeout(R.raf); } catch (e) {  }
+      R.raf = 0; R.rafWin = null;
     }
     function paintQFr(item) {
       if (shown() !== item) return;
@@ -3152,7 +3247,7 @@
         const talk = !!(L.A.on && L.A.interim);
         const was = v.classList.contains('has-interim');
         v.classList.toggle('has-interim', talk);
-        const el = $('[data-b="interim"]', v); if (el) el.textContent = L.A.interim;
+        const el = $('[data-b="interim"]', v); if (el) el.textContent = R.float && v === R.float.box ? tailOf(L.A.interim, 72) : L.A.interim;
         const st = $('[data-b="status"]', v), sl = $('[data-b="status-l"]', v);
         if (st) st.dataset.k = k;
         if (sl && sl.textContent !== label) sl.textContent = label;
@@ -3163,13 +3258,13 @@
     let warmedAt = 0;
     function warmAI() {
       const t = Date.now();
-      if (t - warmedAt < 10000) return;
+      if (t - warmedAt < 8000) return;
       warmedAt = t;
       try { if (S.ai && S.ai.warm) S.ai.warm('live'); } catch (e) {  }
     }
     C.paintListen = () => {
       const b = $('[data-b="listen"]', root);
-      if (b) b.innerHTML = listenHTML(L.A, { startLabel: 'Écouter l’appel', onLabel: 'J’écoute l’appel (en-GB)', quiet: true });
+      if (b) b.innerHTML = listenHTML(L.A, { startLabel: 'Lancer l’assistant', onLabel: 'J’écoute l’appel', quiet: true });
       paintLive();
     };
     function paintHist() {
@@ -3209,9 +3304,13 @@
       const born = Date.now();
       const req = {};
       const ctrl = new AbortController();
-      Object.assign(R, { req, ctrl, item, busy: true, partial: '', lines: [] });
-      item.error = '';
-      paintLive(); paintHist();
+      const prevText = str(item.text);
+      if (o.force) item.forced = true;
+      const force = !!item.forced;
+      dropRaf();
+      views().forEach((v) => { delete v.dataset.fitPx; });
+      Object.assign(R, { req, ctrl, item, busy: true, partial: '', lines: [], born, raf: 0, mode: o.shorter ? 'shorter' : o.item ? 'retry' : 'auto' });
+      item.error = ''; item.errNet = false;
       const drop = () => { call.answers = call.answers.filter((x) => x !== item); if (R.item === item) R.item = null; };
       try {
         if (!aiHas('liveAnswer')) throw new Error(OLD_AI);
@@ -3225,8 +3324,10 @@
             paintHist();
           }).catch(() => {  });
         }
-        const r = await S.examAI.liveAnswer({
+        // Requête lancée d'abord, peinture ensuite : le réseau n'attend pas le rendu.
+        const pr = S.examAI.liveAnswer({
           subject: s.subject, question, expose: callExpose(), shorter: !!o.shorter, signal: ctrl.signal,
+          force, previous: o.shorter ? prevText : '',
           turns: call.turns.slice(-16).map((t) => ({ who: t.who, text: t.text })),
           onDelta: (t, info) => {
             if (R.req !== req || !C.alive) return;
@@ -3234,20 +3335,23 @@
             R.lines = arr(info && info.lines);
             const qFr = str(info && info.qFr).trim();
             if (qFr && !item.fr) { item.fr = qFr; paintQFr(item); }
-            paintAnswer();
+            paintSoon();
           }
         });
+        paintLive(); setTimeout(paintHist, 0);
+        const r = await pr;
         if (R.req !== req || !C.alive) return;
         if (r && r.skip) {
           ctrl.abort();
-          drop();
           R.jury = R.jury.filter((x) => x.at > born);
+          if (force) { item.error = 'L’IA n’a pas trouvé de question dans « ' + question.slice(0, 80) + ' ».'; return; }
+          drop();
           return;
         }
         const text = str(r && r.text).trim();
-        if (!text) throw new Error('Réponse vide de l’IA — réessayez.');
+        if (!text) throw new Error('L’IA n’a renvoyé aucun texte : appuyez sur « Réessayer ».');
         item.text = text;
-        if (r.partial) R.warn = 'Réponse coupée — relancez si besoin.';
+        if (r.partial) R.warn = 'Réponse incomplète : la connexion à l’IA a coupé. Appuyez sur « Réessayer ».';
         item.lines = arr(r.lines).filter((l) => l && str(l.en).trim()).map((l) => ({ en: str(l.en).trim(), fr: str(l.fr).trim() })).slice(0, 12);
         if (!item.fr && str(r.qFr).trim()) item.fr = str(r.qFr).trim();
         item.keyWords = arr(r.keyWords).map(str).map((k) => k.trim()).filter(Boolean).slice(0, 8);
@@ -3257,8 +3361,9 @@
         const keyBad = !!(e && KEY_CODES.includes(e.code));
         item.error = e && e.code === 'NO_KEY' ? NO_KEY_LIVE : keyBad ? (errMsg(e) || 'Clé IA refusée : corrigez-la dans Réglages.') : errMsg(e);
         item.errKey = keyBad;
+        item.errNet = !!(e && /^(NETWORK|OFFLINE|TIMEOUT)$/.test(e.code));
       } finally {
-        if (R.req === req) { Object.assign(R, { busy: false, ctrl: null, partial: '', lines: [] }); if (C.alive) { paintLive(); paintHist(); } }
+        if (R.req === req) { dropRaf(); Object.assign(R, { busy: false, ctrl: null, partial: '', lines: [], mode: '' }); if (C.alive) { paintLive(); paintHist(); } }
         C.saveSoon();
       }
     }
@@ -3277,7 +3382,10 @@
       if (jury) {
         warmAI();
         R.jury = R.jury.filter((x) => now - x.at < JOIN_MS).concat({ text, at: now });
-        if (q) ask(R.jury.map((x) => x.text).join(' '));
+        // Suite d'une question coupée par une pause du jury : relance avec la phrase entière tant que rien n'est affiché.
+        const joined = R.jury.map((x) => x.text).join(' ');
+        const cont = !q && role === 'jury' && R.busy && R.mode === 'auto' && R.item && joined.includes(R.item.question) && !R.lines.length && !R.partial && now - R.born < 4000;
+        if (q || cont) ask(joined);
       } else {
         const a = shown();
         if (a) { a.mine = (a.mine ? a.mine + ' ' : '') + text; paintHist(); }
@@ -3289,47 +3397,58 @@
       if (L.A.on || L.A.starting) return;
       call.endedAt = null;
       R.warn = '';
+      const eb = $('[data-b="end"]', root);
+      if (eb) eb.outerHTML = endBtn(false);
       await L.start();
       if (!C.alive) return;
       if (L.A.on && !call.startedAt) call.startedAt = Date.now();
-      if (!L.A.on) closeFloat();
       C.saveSoon();
       paintLive();
     }
-    function assist() {
+    function assist(o) {
       if (L.A.on || L.A.starting) return;
       R.err = ''; R.errKind = '';
-      if (!aiHas('liveAnswer')) { R.err = OLD_AI; paintLive(); return; }
+      if (!aiHas('liveAnswer')) { R.err = OLD_AI; R.errKind = 'old'; paintLive(); return; }
       if (!aiReady()) { R.err = NO_KEY_START; R.errKind = 'key'; paintLive(); return; }
       warmAI();
       startListen();
-      if (desk && !R.float && (L.A.starting || L.A.on)) openFloat();
+      if ((!o || o.float !== false) && desk && !R.float && (L.A.starting || L.A.on)) openFloat();
     }
     async function endCall() {
-      if (L.A.on || L.A.starting) await L.stop({ drainMs: 0 });
-      if (R.busy && R.item && !R.item.text && !R.item.error) R.item.error = 'Réponse interrompue (fin de l’appel).';
-      if (R.ctrl) R.ctrl.abort();
-      Object.assign(R, { req: null, ctrl: null, busy: false, partial: '' });
-      call.endedAt = Date.now();
-      C.saveNow();
-      paintLive(); paintHist();
-      toast('Appel terminé : questions et réponses restent dans l’historique (export .md possible).', 'ok', { duration: 6000 });
+      if (R.ending) return;
+      R.ending = true;
+      try {
+        closeFloat();
+        if (L.A.on || L.A.starting) await L.stop({ drainMs: 0 });
+        if (R.busy && R.item && !R.item.text && !R.item.error) R.item.error = 'Réponse interrompue (fin de l’appel).';
+        if (R.ctrl) R.ctrl.abort();
+        Object.assign(R, { req: null, ctrl: null, busy: false, partial: '', mode: '' });
+        call.endedAt = Date.now();
+        C.saveNow();
+        paintLive(); paintHist();
+        const b = $('[data-b="end"]', root);
+        if (b) b.outerHTML = endBtn(true);
+      } finally { R.ending = false; }
     }
 
     // 760 × 420 : sur l'écran 1536 × 830, la fenêtre tient sous la caméra (moitié de la largeur,
     // moitié de la hauteur) et laisse voir le jury ; une réponse de 90 mots y reste lisible à 60-70 cm.
     const FLOAT_W = 760, FLOAT_H = 420;
     function toggleFloat() {
+      if (R.floatPending) return;
       if (R.float) { closeFloat(); paintLive(); return; }
       if (!L.A.on) { toast('Lancez d’abord l’assistant : la fenêtre flottante suit l’appel en direct.', 'info'); return; }
       openFloat();
     }
     function openFloat() {
+      if (R.floatPending) return;
+      R.floatPending = true;
+      const done = () => { R.floatPending = false; };
       const pip = window.documentPictureInPicture;
       let req = null;
       if (pip && typeof pip.requestWindow === 'function') { try { req = pip.requestWindow({ width: FLOAT_W, height: FLOAT_H }); } catch (e) { req = null; } }
-      if (req) req.then(setupFloat, () => floatPopup());
-      else floatPopup();
+      if (req) { paintLive(); req.then((w) => { done(); setupFloat(w); }, () => { done(); floatPopup(); }); }
+      else { done(); floatPopup(); }
     }
     function floatPopup() {
       let w = null;
@@ -3357,12 +3476,14 @@
       const scale = document.documentElement.style.getPropertyValue('--font-scale');
       if (scale) doc.documentElement.style.setProperty('--font-scale', scale);
       doc.body.className = 'pip-body ex-float-body lv-float-body';
-      doc.body.innerHTML = '<div class="ex-float lv-float"><section class="ex-live lv-stage lv-fit" data-b="float" data-theme="dark" aria-live="polite"></section></div>';
+      doc.body.innerHTML = '<div class="ex-float lv-float"><section class="ex-live lv-stage lv-fit" data-b="float" data-theme="dark"></section></div>';
       R.float = { win: w, box: doc.querySelector('[data-b="float"]') };
       doc.addEventListener('click', (e) => { const b = e.target.closest('[data-act]'); if (b && !b.disabled) onAct(b.dataset.act); });
+      // Mêmes raccourcis que la page (Échap et F n'ont pas de sens dans la fenêtre).
+      doc.addEventListener('keydown', (e) => { if (e.key === 'Escape' || (e.key || '').toLowerCase() === 'f') return; callKey(e); });
       let t = 0;
-      w.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => { if (R.float && R.float.win === w) fitAns(R.float.box); }, 60); });
-      const gone = () => { if (R.float && R.float.win === w) { R.float = null; if (C.alive) paintLive(); } };
+      w.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => { if (R.float && R.float.win === w) { delete R.float.box.dataset.fitPx; fitAns(R.float.box); } }, 60); });
+      const gone = () => { if (R.float && R.float.win === w) { dropRaf(); R.float = null; if (C.alive) paintLive(); } };
       w.addEventListener('pagehide', gone);
       w.addEventListener('unload', gone);
       paintLive();
@@ -3370,6 +3491,7 @@
     function closeFloat() {
       const f = R.float;
       if (!f) return;
+      dropRaf();
       R.float = null;
       try { f.win.close(); } catch (e) {  }
     }
@@ -3379,14 +3501,42 @@
       if (!box || !box.requestFullscreen) { toast('Plein écran indisponible dans ce navigateur.', 'warn'); return; }
       box.requestFullscreen().catch(() => toast('Plein écran indisponible dans ce navigateur.', 'warn'));
     }
-    const onFs = () => { if (C.alive) paintLive(); };
+    const onFs = () => { if (!C.alive) return; const b = $('[data-b="live"]', root); if (b) delete b.dataset.fitPx; paintLive(); };
     document.addEventListener('fullscreenchange', onFs);
     // Échap sort du plein écran (Chrome le fait déjà ; filet si le focus est dans un champ).
     const onKey = (e) => { if (e.key === 'Escape' && isFull()) document.exitFullscreen().catch(() => {}); };
     document.addEventListener('keydown', onKey);
     let fitT = 0;
-    const onResize = () => { clearTimeout(fitT); fitT = setTimeout(() => { if (C.alive) fitAns($('[data-b="live"]', root)); }, 80); };
+    const onResize = () => { clearTimeout(fitT); fitT = setTimeout(() => { if (!C.alive) return; const b = $('[data-b="live"]', root); if (b) { delete b.dataset.fitPx; fitAns(b); } }, 80); };
     window.addEventListener('resize', onResize);
+    // Retour sur la page : rattrape ce qui n'a pas été peint pendant qu'elle était cachée.
+    const onVis = () => { if (!document.hidden && C.alive) paintLive(); };
+    document.addEventListener('visibilitychange', onVis);
+    // Retour du réseau : relance la dernière réponse perdue par la coupure.
+    const onOnline = () => { if (!C.alive || R.busy || !L.A.on || call.endedAt) return; const a = shown(); if (a && a.error && a.errNet && !a.text) ask(a.question, { item: a }); };
+    window.addEventListener('online', onOnline);
+    function askNow() {
+      const t = (L.A.interim || '').trim() || (R.jury.length ? R.jury.map((x) => x.text).join(' ') : str((call.turns.slice().reverse().find((x) => x.who === 'jury') || call.turns[call.turns.length - 1] || {}).text));
+      if (!t) return;
+      if (R.busy && R.item && R.item.question === t) return;
+      const last = call.answers[call.answers.length - 1];
+      if (!L.A.interim && !R.jury.length && last && last.question === t && last.text) return;
+      L.A.interim = '';
+      ask(t, { force: true });
+    }
+    // Raccourcis : Espace répond, C plus court, R nouvelle réponse, F plein écran, P fenêtre flottante.
+    function callKey(e) {
+      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
+      const k = (e.key || '').toLowerCase();
+      if (k === ' ' && e.target.closest && e.target.closest('button, [role=radio], summary, a')) return;
+      const act = k === ' ' ? 'ask-now' : k === 'c' ? 'shorter' : k === 'r' ? 'retry' : k === 'f' ? 'full' : k === 'p' ? 'float' : '';
+      if (!act) return;
+      if (act === 'ask-now' && !L.A.on) return;
+      if ((act === 'full' && !canFull()) || (act === 'float' && !desk)) return;
+      if ((act === 'shorter' || act === 'retry') && !shown()) return;
+      e.preventDefault();
+      onAct(act);
+    }
     // Son de l'appel : coupures et reprises (Son du PC, micro coupé, onglet muet…) affichées dans les aides.
     const WARN_OFF = /_BACK$|_RESUMED$|^ONLINE$/;
     const offInfo = S.audio && S.audio.on ? S.audio.on('info', (ev) => {
@@ -3399,26 +3549,38 @@
       paintLive();
     }) : null;
 
-    function setLink(value, announce) {
+    function setLink(value) {
       const v = str(value).trim();
       const link = teamsValid(v);
-      const box = $('[data-b="teams"]', root), hint = $('[data-b="teams-hint"]', root);
+      const box = $('[data-b="teams"]', root), hint = $('[data-b="teams-hint"]', root), f = $('[data-f="teams"]', root);
       if (box) { box.classList.toggle('is-set', !!link); box.classList.toggle('is-bad', !link && !!v); }
+      if (f && (link || !v)) f.removeAttribute('aria-invalid');
       if (hint) hint.textContent = link ? `Lien ${meetingApp(link)} enregistré pour cet appel.` : v ? LINK_BAD : LINK_HINT;
-      if (link && link !== s.teamsLink) {
-        s.teamsLink = link; setPrefs({ studentTeams: link }); C.saveSoon();
-        if (announce) toast(`Lien ${meetingApp(link)} enregistré.`, 'ok');
-      }
+      if (link && link !== s.teamsLink) { s.teamsLink = link; setPrefs({ studentTeams: link }); C.saveSoon(); }
       return link;
     }
 
     function onAct(act) {
       if (act === 'assist') assist();
-      else if (act === 'listen-start') startListen();
-      else if (act === 'listen-stop') L.stop().then(() => toast('Assistant arrêté.', 'info'));
-      else if (act === 'shorter' || act === 'retry') { const a = shown(); if (a) ask(a.question, { item: a, shorter: act === 'shorter' }); }
+      else if (act === 'listen-start') assist({ float: false });
+      else if (act === 'listen-stop') { closeFloat(); L.stop(); }
+      else if (act === 'ask-now') askNow();
+      else if (act === 'shorter' || act === 'retry') {
+        const a = shown();
+        if (!a) return;
+        if (R.busy && R.item === a && R.mode === act) return;
+        ask(a.question, { item: a, shorter: act === 'shorter' });
+      }
       else if (act === 'float') toggleFloat();
       else if (act === 'full') toggleFull();
+      else if (act === 'reload') location.reload();
+      else if (act === 'import-subject') importSubjectSheet((subj) => {
+        s.subject = normSubject(subj); s.subjectId = s.subject.id; C.saveNow();
+        const d = $('.ex-call-subject', root);
+        if (d) d.outerHTML = subjectCard();
+        const sub = $('.ex-topbar .ex-tb-title small', root);
+        if (sub) sub.textContent = s.subject.title;
+      });
       else if (act === 'settings') go('#/settings');
       else if (act === 'use-mic') { L.A.preset = 'haut-parleur'; setPrefs({ callListenPreset: L.A.preset }); C.paintListen(); assist(); }
       else if (act === 'pick-src') {
@@ -3430,7 +3592,7 @@
       else if (act === 'teams-join') {
         const f = $('[data-f="teams"]', root);
         const v = f ? f.value.trim() : '';
-        if (!v) { toast('Collez d’abord le lien Teams ou Meet de l’appel.', 'warn'); if (f) f.focus(); return; }
+        if (!v) { linkEmpty(root, f); return; }
         const link = setLink(v);
         if (link && f) f.value = link;
         openTeams(v);
@@ -3446,15 +3608,17 @@
     root.addEventListener('change', (e) => {
       const f = e.target.closest && e.target.closest('[data-f="teams"]');
       if (!f) return;
-      const link = setLink(f.value, true);
+      const link = setLink(f.value);
       if (link && f.value !== link) f.value = link;
     });
+    root.addEventListener('keydown', linkEnter);
 
     C.paintListen();
     paintHist();
     L.probe();
     setCurrent({
       get wantsWake() { return L.A.on || L.A.starting; },
+      key: callKey,
       flush() { C.saveNow(); },
       busy() { return L.A.on || L.A.starting; },
       async canLeave() {
@@ -3465,12 +3629,15 @@
         C.alive = false;
         document.removeEventListener('fullscreenchange', onFs);
         document.removeEventListener('keydown', onKey);
+        document.removeEventListener('visibilitychange', onVis);
         window.removeEventListener('resize', onResize);
+        window.removeEventListener('online', onOnline);
         clearTimeout(fitT);
         if (offInfo) { try { offInfo(); } catch (e) {  } }
         if (isFull()) document.exitFullscreen().catch(() => {});
         if (R.busy && R.item && !R.item.text && !R.item.error) R.item.error = 'Réponse interrompue (fin de l’appel).';
         if (R.ctrl) R.ctrl.abort();
+        dropRaf();
         closeFloat();
         C.saveNow();
         L.stop({ drainMs: 0 });

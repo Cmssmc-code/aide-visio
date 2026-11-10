@@ -47,7 +47,7 @@
 .lv-start { display: grid; justify-items: center; gap: 10px; padding: 14px 4px 6px; text-align: center; }
 .lv-start-ic {
   display: grid; place-items: center; width: 60px; height: 60px; border-radius: 20px;
-  color: #c7ccff; background: rgba(96, 165, 250, .16); box-shadow: inset 0 0 0 1px rgba(96, 165, 250, .22);
+  color: #bfdbfe; background: rgba(96, 165, 250, .16); box-shadow: inset 0 0 0 1px rgba(96, 165, 250, .22);
 }
 .lv-start-ic svg.ico { width: 30px; height: 30px; }
 .lv-start-t { margin: 4px 0 0; font: 700 24px/1.2 var(--font-display, var(--font)); letter-spacing: -.015em; color: var(--lv-en); }
@@ -65,16 +65,15 @@
 }
 .lv-status b { font-size: 14px; font-weight: 650; letter-spacing: -.005em; white-space: nowrap; }
 .lv-status .ex-live-dot { width: 9px; height: 9px; transition: background-color .25s; }
-.lv-status.on { color: #ffd3d3; background: rgba(248, 113, 113, .14); }
-.lv-status.on .ex-live-dot { background: #f87171; animation: lv-pulse 1.6s ease-out infinite; }
-.lv-status[data-k="talk"] { color: #e3d9ff; background: rgba(96, 165, 250, .18); }
-.lv-status[data-k="talk"] .ex-live-dot { background: #bfdbfe; animation: lv-pulse-v 1s ease-out infinite; }
+.lv-status.on { color: var(--text-2); background: rgba(255, 255, 255, .06); }
+.lv-status.on .ex-live-dot { background: #93c5fd; animation: none; }
+.lv-status[data-k="talk"] { color: #dbeafe; background: rgba(96, 165, 250, .18); }
+.lv-status[data-k="talk"] .ex-live-dot { background: #bfdbfe; animation: lv-blink 1s ease-in-out infinite; }
 .lv-status[data-k="busy"] { color: #dbeafe; background: rgba(96, 165, 250, .18); }
 .lv-status[data-k="busy"] .ex-live-dot { background: #93c5fd; animation: lv-blink 1s ease-in-out infinite; }
-.lv-status[data-k="ready"] { color: #c9f7d8; background: rgba(74, 222, 128, .14); }
-.lv-status[data-k="ready"] .ex-live-dot { background: #4ade80; animation: none; }
-@keyframes lv-pulse { 0% { box-shadow: 0 0 0 0 rgba(248, 113, 113, .55); } 100% { box-shadow: 0 0 0 9px transparent; } }
-@keyframes lv-pulse-v { 0% { box-shadow: 0 0 0 0 rgba(147, 197, 253, .6); } 100% { box-shadow: 0 0 0 9px transparent; } }
+.lv-status[data-k="ready"] { color: #dbeafe; background: rgba(96, 165, 250, .14); }
+.lv-status[data-k="ready"] .ex-live-dot { background: #60a5fa; animation: none; }
+.ex-call .lv-side .ex-live-dot.on { background: #60a5fa; animation: none; box-shadow: none; }
 @keyframes lv-blink { 50% { opacity: .35; } }
 
 .lv-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
@@ -85,7 +84,7 @@
 .lv-ghost.btn svg.ico { width: 16px; height: 16px; }
 @media (hover: hover) { .lv-ghost.btn:hover { color: var(--lv-en); background: rgba(255, 255, 255, .07); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16); } }
 .lv-ghost.btn.on { color: #dbeafe; background: rgba(96, 165, 250, .16); box-shadow: inset 0 0 0 1px rgba(96, 165, 250, .3); }
-.lv-esc { font-size: 13.5px; color: var(--text-3); }
+.lv-ghost.btn[aria-disabled="true"] { cursor: progress; }
 
 /* Bloc « Jury » : question entendue + traduction ; en direct pendant que le jury parle */
 .lv-stage .lv-q {
@@ -95,26 +94,26 @@
 .lv-q-tag {
   flex: none; margin-top: 2px; padding: 3px 8px; border-radius: 7px;
   font: 700 11px/1.2 var(--font); letter-spacing: .08em; text-transform: uppercase;
-  color: #ddd4ff; background: rgba(96, 165, 250, .2);
+  color: #dbeafe; background: rgba(96, 165, 250, .2);
 }
 .lv-q-body { display: grid; gap: 2px; min-width: 0; flex: 1; }
 .lv-q-en.ex-live-en { margin: 0; font: 600 17px/1.38 var(--font); color: var(--lv-q); letter-spacing: -.005em; }
 .lv-q-fr { margin: 0; font-size: 15px; line-height: 1.4; color: var(--lv-q-fr); }
+/* La ligne FR garde sa hauteur pendant la traduction : la réponse ne descend pas. */
+.lv-stage:not(.has-interim) .lv-q:not(.lv-q-live) .lv-q-fr[hidden] { display: block; visibility: hidden; min-height: 1.4em; }
 .lv-q-fr .ex-live-fr { margin: 0; font-size: inherit; color: inherit; }
-.lv-interim.ex-live-interim { margin: 0; font: italic 600 17px/1.38 var(--font); color: var(--lv-en); }
+.lv-interim.ex-live-interim { margin: 0; font: 600 17px/1.38 var(--font); color: var(--lv-en); }
 .lv-interim::after { content: ""; display: inline-block; width: 2px; height: 1em; margin-left: 3px; vertical-align: -.12em; background: #bfdbfe; animation: lv-blink 1s steps(2, start) infinite; }
-.lv-q-wait { margin: 0; font-size: 14px; font-style: italic; color: var(--lv-q-fr); }
-.lv-stage:not(.has-interim) .lv-interim, .lv-stage:not(.has-interim) .lv-q-wait, .lv-stage:not(.has-interim) .lv-q-live { display: none; }
+.lv-stage:not(.has-interim) .lv-interim, .lv-stage:not(.has-interim) .lv-q-live { display: none; }
 .lv-stage.has-interim .lv-q-en, .lv-stage.has-interim .lv-q-fr { display: none; }
 .lv-stage.has-interim .lv-q { box-shadow: inset 0 0 0 1px rgba(96, 165, 250, .38); background: rgba(96, 165, 250, .08); }
 .lv-stage.has-interim .lv-empty { display: none; }
 /* Avant la 1re réponse : la phrase du jury occupe la scène, en grand. */
-.lv-stage.has-interim .lv-q-live { flex: 1 1 auto; align-items: center; padding: 18px 22px; }
+.lv-stage.has-interim .lv-q-live { flex: none; align-items: flex-start; padding: 14px 18px; }
 .lv-stage .lv-q-live .lv-interim { font-size: 26px; line-height: 1.3; white-space: normal; }
-.lv-stage .lv-q-live .lv-q-wait { font-size: 16px; margin-top: 4px; }
 /* Pendant que le jury parle, l'ancienne réponse s'efface doucement. */
-.lv-a, .lv-foot { transition: opacity .3s var(--ease-out, ease); }
-.lv-stage.has-interim .lv-a, .lv-stage.has-interim .lv-foot { opacity: .3; }
+.lv-a, .lv-foot .lv-kw { transition: opacity .18s var(--ease-out, ease); }
+.lv-stage.has-interim .lv-a, .lv-stage.has-interim .lv-foot .lv-kw { opacity: .3; }
 
 /* Attente */
 .lv-empty { display: grid; gap: 10px; padding: 6px 0; }
@@ -131,28 +130,29 @@
 .lv-ans.is-streaming::after { content: none; }
 .lv-line { display: grid; gap: .16em; margin: 0; }
 .lv-en { text-wrap: pretty; }
+/* 1re phrase en relief : c'est elle que l'élève lit d'abord. */
+.lv-ans .lv-line:not(:first-child) .lv-en { font-weight: 560; }
+.lv-ans .lv-line:first-child .lv-en { font-weight: 720; }
 .lv-tr {
-  font: 500 max(14px, .6em)/1.34 var(--font); letter-spacing: 0; color: var(--lv-fr); text-wrap: pretty;
+  font: 500 max(15px, .62em)/1.34 var(--font); letter-spacing: 0; color: var(--lv-fr); text-wrap: pretty;
 }
 .lv-tr:empty { display: none; }
-.lv-line.is-new { animation: lv-in .32s var(--ease-out, ease) both; }
-@keyframes lv-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.lv-line.is-new { animation: lv-in .16s var(--ease-out, ease) both; }
+@keyframes lv-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 /* Curseur de frappe à la fin du dernier texte reçu */
 .lv-ans.is-streaming .lv-line:last-child:not(:has(.lv-tr:not(:empty))) .lv-en::after,
 .lv-ans.is-streaming .lv-line:last-child .lv-tr:not(:empty)::after {
   content: ""; display: inline-block; width: 3px; height: .9em; margin-left: 4px; vertical-align: -.1em;
   border-radius: 2px; background: #93c5fd; animation: lv-blink 1s steps(2, start) infinite;
 }
-/* Réponse en préparation : deux lignes qui scintillent */
+/* Réponse en préparation : deux lignes unies qui battent doucement */
 .lv-ans.is-streaming:empty { gap: .45em; }
 .lv-ans.is-streaming:empty::before, .lv-ans.is-streaming:empty::after {
-  content: ""; display: block; height: .62em; border-radius: 8px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, .06) 0%, rgba(147, 197, 253, .2) 50%, rgba(255, 255, 255, .06) 100%) 0 0 / 200% 100%;
-  animation: lv-shimmer 1.3s linear infinite;
+  content: ""; display: block; height: .5em; border-radius: 8px;
+  background: rgba(255, 255, 255, .08); animation: lv-blink 1.6s ease-in-out infinite;
 }
 .lv-ans.is-streaming:empty::before { width: 82%; }
 .lv-ans.is-streaming:empty::after { width: 58%; }
-@keyframes lv-shimmer { to { background-position: -200% 0; } }
 /* Longue réponse au plus petit : défilement doux, fondu en bas */
 .lv-a.is-scroll {
   overflow-y: auto !important; scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .25) transparent;
@@ -180,7 +180,7 @@
 .lv-stage .ex-live-err > span { flex: 1 1 220px; }
 .lv-stage .ex-live-err > .lv-err-btns { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 8px; }
 .lv-start .ex-live-err { max-width: 560px; }
-.lv-warn { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; border-radius: 12px; background: rgba(251, 191, 36, .14); color: #fde68a; font-weight: 600; line-height: 1.4; }
+.lv-warn { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; border-radius: 12px; background: rgba(248, 113, 113, .14); color: #fecaca; font-weight: 600; line-height: 1.4; }
 
 /* Plein écran (PC) : sous-titres centrés, en très grand, juste sous la caméra */
 .lv-stage:fullscreen {
@@ -216,11 +216,11 @@
 .lv-fit .lv-q-tag { font-size: 10.5px; padding: 2px 7px; }
 .lv-fit .lv-q-en, .lv-fit .lv-interim { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lv-fit .lv-q-fr { font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.lv-fit .lv-q-wait { font-size: 13.5px; }
 .lv-fit .lv-a { flex: 1 1 auto; overflow: hidden; display: flex; flex-direction: column; justify-content: safe center; }
 .lv-fit .lv-ans { text-align: center; justify-items: center; gap: .42em; }
 .lv-fit .lv-foot { gap: 8px; min-height: 30px; }
 .lv-fit .lv-foot .lv-status { flex: none; }
+.lv-fit > .lv-foot:last-child { margin-top: auto; }
 .lv-fit .lv-tr { font-size: max(15px, .64em); }
 .lv-fit .lv-en, .lv-fit .lv-tr, .lv-stage:fullscreen .lv-en, .lv-stage:fullscreen .lv-tr { text-wrap: balance; }
 .lv-fit .lv-kw {
@@ -277,6 +277,7 @@
   .ex-call .lv-q-en, .ex-call .lv-interim { font-size: 18.5px; }
   .ex-call .lv-q-fr { font-size: 16px; }
   .ex-call .lv-kw .pill { font-size: 15px; }
+  .ex-call .lv-stage:not(:fullscreen) .lv-tr { font-size: max(16.5px, .62em); }
   .ex-call .lv-start-t { font-size: 26px; }
   .ex-call .lv-start-p { font-size: 17px; }
   .ex-call .lv-go { min-height: 64px; padding-inline: 36px; font-size: 20px; }
@@ -290,11 +291,15 @@
 @media (max-width: 559px) {
   .ex-call .lv-stage { padding: 14px 14px 12px; margin-bottom: 14px; }
   .lv-go { width: 100%; justify-content: center; }
-  .lv-head .lv-vtools { width: 100%; }
+  .lv-head .lv-vtools { margin-left: auto; }
   .lv-tools .btn { flex: 1 1 auto; justify-content: center; }
   .lv-foot { flex-wrap: wrap; }
   .lv-foot .lv-atools { width: 100%; margin-left: 0; }
   .lv-q { padding: 9px 12px; gap: 10px; }
+  /* Question compacte : 2 lignes au plus (elle reste entière dans l'historique). */
+  .lv-stage .lv-q:not(.lv-q-live) .lv-q-tag { display: none; }
+  .lv-stage:not(.has-interim) .lv-q-en.ex-live-en { font-size: 15.5px; }
+  .lv-stage:not(.has-interim) .lv-q-en, .lv-stage:not(.has-interim) .lv-q-fr { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -302,7 +307,7 @@
   .lv-line.is-new { animation: none; }
   .lv-interim::after, .lv-ans.is-streaming .lv-line:last-child .lv-en::after, .lv-ans.is-streaming .lv-line:last-child .lv-tr::after { animation: none !important; }
   .lv-ans.is-streaming:empty::before, .lv-ans.is-streaming:empty::after { animation: none; }
-  .lv-a, .lv-foot, .lv-status { transition: none; }
+  .lv-a, .lv-foot, .lv-foot .lv-kw, .lv-status { transition: none; }
   .lv-a.is-scroll { scroll-behavior: auto; }
 }
 @media (forced-colors: active) {

@@ -38,7 +38,7 @@
     liveIdleMs: 8000,
     hedgeMs: 2500,
     slowMs: 2 * 60 * 1000,
-    warmMs: 15000
+    warmMs: 9000
   };
 
   const breaker = new Map();

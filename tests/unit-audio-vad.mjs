@@ -170,6 +170,19 @@ await test('parole longue (35 s) : découpée en segments ≤ 14 s, contigus, sa
   assert.deepEqual(events.map(e => e.active), [true, false], 'un seul tour de parole');
 });
 
+await test('hangoverMs 600 (voie du jury) : 30 trames, segment clos plus tôt, pause de 0,68 s coupe', () => {
+  const r = rng(41);
+  const sig = mix(concat(silence(0.5), speech(1.5, 0.1, r), silence(0.68), speech(1.5, 0.1, r), silence(1.5)), white(5.68, 0.003, rng(42)));
+  const fast = runVad(sig, { hangoverMs: 600 });
+  const slow = runVad(sig);
+  assert.equal(fast.vad.hangFrames, 30);
+  assert.equal(slow.vad.hangFrames, 38);
+  assert.equal(fast.segments.length, 2, 'segments 600 : ' + fast.segments.map(s => `${s.startMs}-${s.endMs}`).join(', '));
+  assert.equal(slow.segments.length, 1, 'segments 750 : ' + slow.segments.map(s => `${s.startMs}-${s.endMs}`).join(', '));
+  const off = e => e.filter(x => !x.active).pop().atMs;
+  assert.ok(off(fast.events) <= off(slow.events) - 140, 'fin de parole annoncée ~150 ms plus tôt');
+});
+
 await test('bruit bref (250 ms) : ignoré (parole minimale 450 ms)', () => {
   const r = rng(10);
   const sig = mix(concat(silence(1), speech(0.25, 0.1, r), silence(1.5)), white(2.75, 0.003, rng(11)));

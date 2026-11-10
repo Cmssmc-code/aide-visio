@@ -11,8 +11,8 @@
   const MSG = {
     NO_DISPLAY_AUDIO: "Le partage ne contient pas de son. Recommencez et cochez « Partager l'audio de l'onglet » (Meet dans Chrome) ou « Partager l'audio du système » (Teams en application : choisissez « Écran entier »).",
     DISPLAY_CANCELLED: "Partage annulé. Choisissez l'onglet de la visio (ou l'écran entier pour Teams) et cochez le partage de l'audio.",
-    DISPLAY_UNSUPPORTED: "Ce navigateur ne sait pas capter le son d'un onglet. Utilisez Chrome ou Edge sur PC, ou le mode « Haut-parleur ».",
-    DISPLAY_NEEDS_GESTURE: "Le partage d'onglet doit être lancé par un clic. Appuyez de nouveau sur « Démarrer ».",
+    DISPLAY_UNSUPPORTED: "Ce navigateur ne sait pas capter le son d'un onglet. Utilisez Chrome ou Edge sur PC, ou choisissez « Micro / haut-parleur ».",
+    DISPLAY_NEEDS_GESTURE: "Le partage d'onglet doit partir d'un clic : appuyez de nouveau sur le bouton qui lance l'écoute.",
     DISPLAY_ENDED: "Le partage de l'onglet a été arrêté : la voix du jury n'est plus captée.",
     DISPLAY_SILENT: "Aucun son ne vient de l'onglet partagé depuis une minute. Vérifiez l'onglet choisi et la case de partage de l'audio.",
     MIC_DENIED: "Accès au micro refusé. Cliquez sur le cadenas à gauche de l'adresse, autorisez le micro, puis réessayez.",
@@ -26,8 +26,8 @@
     NO_MEDIA: "Ce navigateur ne permet pas d'accéder au micro.",
     INSECURE: "Le micro n'est accessible qu'en HTTPS. Ouvrez la version en ligne de Aide Visio.",
     NO_WEBSPEECH: "La reconnaissance vocale n'est pas disponible dans ce navigateur. Utilisez Chrome ou Edge, ou un mode « transcription IA ».",
-    NO_KEY: "Ce mode a besoin d'une clé Gemini (Réglages). Sans clé, choisissez le mode « Haut-parleur ».",
-    KEY_ERROR: "Clé API refusée pour la transcription. Corrigez-la dans les Réglages : les passages en attente seront transcrits ensuite.",
+    NO_KEY: "Ce choix de son a besoin d'une clé IA (Réglages). Sans clé, choisissez « Micro / haut-parleur ».",
+    KEY_ERROR: "Clé IA refusée par la transcription : corrigez-la dans Réglages. Les passages en attente seront transcrits ensuite.",
     NOT_ALLOWED: "Reconnaissance vocale refusée : autorisez le micro pour ce site.",
     SERVICE_NOT_ALLOWED: "Le service de reconnaissance vocale est bloqué sur ce poste. Choisissez un mode « transcription IA ».",
     LANGUAGE: "Langue non prise en charge par la reconnaissance vocale.",
@@ -37,7 +37,7 @@
     LOCAL_SPEECH: "Réseau indisponible : reconnaissance vocale passée en mode local.",
     TRANSCRIBE_FAILED: "La transcription IA échoue (réseau ou service). Nouvel essai automatique.",
     SEGMENT_RETRY: "Un passage n'a pas pu être transcrit : nouvel essai dans quelques secondes.",
-    SEGMENT_LOST: "Un passage du jury n'a pas pu être transcrit.",
+    SEGMENT_LOST: "Une phrase du jury n'a pas pu être transcrite (deux essais ratés) : demandez-lui de la répéter.",
     QUOTA_WAIT: "Quota Gemini gratuit atteint : transcription en attente (reprise dans {s} s, aucun passage perdu).",
     OFFLINE: "Hors ligne : les passages du jury seront transcrits au retour du réseau.",
     ONLINE: "Réseau rétabli.",
@@ -1410,7 +1410,7 @@ registerProcessor('aidevisio-tap', AideVisioTap);
       this.fails++;
       if (!p.lateRetry && !s.stopped) {
         p.lateRetry = true;
-        info(this.ch.who, 'SEGMENT_RETRY', 'warn');
+        info(this.ch.who, 'SEGMENT_RETRY', 'info');
         setTimeout(() => { if (!this.queue.aborted) this.queue.push(p); }, 8000);
       } else info(this.ch.who, 'SEGMENT_LOST', 'warn');
       if (this.fails >= 3 && this.ch.state !== 'error') this.ch.setState('error', { code: 'TRANSCRIBE_FAILED' });
@@ -1487,6 +1487,8 @@ registerProcessor('aidevisio-tap', AideVisioTap);
         if (!this.vad) {
           this.vad = new Vad({
             collect: this.engineKind === 'cloud',
+            // Jury : fin de phrase plus tôt, pour lancer l'aide plus vite.
+            hangoverMs: this.role === 'them' ? 600 : 750,
             onSpeech: active => this.onSpeech(active),
             onSegment: (samples, segInfo) => { if (this.engine && this.engine.segment) this.engine.segment(samples, segInfo); },
           });

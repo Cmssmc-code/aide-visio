@@ -48,7 +48,7 @@ function examFakes() {
   const log = (fn, a, extra) => {
     const o = a || {};
     M.calls.push(Object.assign({ fn, kind: o.kind, at: Date.now() },
-      'question' in o ? { question: o.question, shorter: !!o.shorter, expose: String(o.expose || ''), turns: (o.turns || []).length, subject: o.subject && o.subject.id } : {}, extra));
+      'question' in o ? { question: o.question, shorter: !!o.shorter, force: !!o.force, previous: String(o.previous || ''), expose: String(o.expose || ''), turns: (o.turns || []).length, subject: o.subject && o.subject.id } : {}, extra));
   };
   // Fausse IA du direct : sous-titres bilingues (paires EN / FR) envoyés en flux, en 3 morceaux.
   const LIVE = [
@@ -936,6 +936,8 @@ let callId = '';
     la = await callsOf(cp, 'liveAnswer');
     const last = la[la.length - 1];
     assert(last.shorter === true && last.question === Q2 + ' Could you give an example?', 'liveAnswer({ shorter: true }) : ' + JSON.stringify(last));
+    assert(/European exporters/.test(last.previous) && !last.force, '« Plus court » envoie la réponse affichée : ' + JSON.stringify(last));
+    assert(!(await cp.$('[data-b="live"][aria-live]')) && await cp.$('[data-b="call-sr"][aria-live]'), 'annonce courte, pas de zone aria-live sur toute la scène');
     const [dl] = await Promise.all([cp.waitForEvent('download'), cp.click('[data-act="export"]')]);
     const md = fs.readFileSync(await dl.path(), 'utf8');
     assert(/^# Appel d’entraînement/.test(md) && md.includes('### 1. ' + Q1) && md.includes('Réponse IA : I think the new tariffs will raise prices') && md.includes('Ma réponse : I think tariffs are bad') && md.includes('Tariffs mean higher prices'), 'export : ' + md.slice(0, 300));
@@ -971,6 +973,18 @@ let callId = '';
     await cp.waitForSelector('[data-b="live"] .ex-live-kw .pill', { timeout: 5000 });
     const la = (await callsOf(cp, 'liveAnswer')).pop();
     assert(la.question === 'Why do you think so?' && /local jobs/.test(la.expose), 'liveAnswer : ' + JSON.stringify(la));
+    // « Répondre maintenant » (touche Espace) : demande explicite ; sans question trouvée, cause affichée.
+    await emit(cp, 'interim', { who: 'mixed', text: 'Can you hear me' });
+    const n1 = (await callsOf(cp, 'liveAnswer')).length;
+    await cp.evaluate(() => { document.activeElement && document.activeElement.blur && document.activeElement.blur(); });
+    await cp.keyboard.press('Space');
+    await cp.waitForFunction((n) => window.__examFakes.calls.filter((c) => c.fn === 'liveAnswer').length > n, n1, { timeout: 5000 });
+    const fa = (await callsOf(cp, 'liveAnswer')).pop();
+    assert(fa.force === true && fa.question === 'Can you hear me' && fa.previous === '', 'Espace → liveAnswer({ force: true }) : ' + JSON.stringify(fa));
+    await cp.waitForFunction(() => /pas trouvé de question/.test((document.querySelector('[data-b="live"] .ex-live-err') || {}).textContent || ''), null, { timeout: 5000 });
+    assert(await cp.$('[data-b="live"] .ex-live-err [data-act="retry"]'), 'question introuvable : cause + Réessayer');
+    await emit(cp, 'final', { who: 'mixed', text: 'Why do you think so?' });
+    await cp.waitForSelector('[data-b="live"] .ex-live-kw .pill', { timeout: 5000 });
     await cp.evaluate(() => { window.__examFakes.aiReady = false; });
     await cp.click('[data-b="live"] [data-act="retry"]');
     await cp.waitForSelector('[data-b="live"] .ex-live-err', { timeout: 5000 });
@@ -980,11 +994,14 @@ let callId = '';
     await cp.waitForFunction(() => !window.AideVisio.audio.running, null, { timeout: 5000 });
     await cp.waitForFunction(() => !!AideVisio.examStore.get(location.hash.split('/')[2]).call.endedAt);
     assert(await cp.$('[data-act="listen-start"]:not([disabled])'), 'écoute relançable après la fin');
+    await cp.waitForSelector('[data-b="end"][disabled]', { timeout: 3000 });
+    assert(/Appel terminé/.test(await cp.textContent('[data-b="end"]')), 'bouton de fin : « Appel terminé »');
     await cp.evaluate(() => { window.__examFakes.aiReady = false; document.querySelectorAll('.toast').forEach((t) => t.remove()); });
     const started = await cp.evaluate(() => window.__examFakes.audio.started);
     await cp.click('[data-src="visio-casque"]');
     await cp.click('[data-act="listen-start"]');
-    await cp.waitForFunction(() => [...document.querySelectorAll('.toast')].some((t) => /clé dans Réglages/.test(t.textContent)), null, { timeout: 5000 });
+    await cp.waitForFunction(() => /Pas de clé IA/.test((document.querySelector('[data-b="live"] .ex-live-err') || {}).textContent || ''), null, { timeout: 5000 });
+    assert(!(await cp.$('.toast')), 'pas de toast : l’erreur est dans la scène');
     assert((await cp.evaluate(() => window.__examFakes.audio.started)) === started, 'aucune écoute lancée sans clé');
     await cp.evaluate(() => { window.__examFakes.aiReady = true; });
   });
@@ -1012,6 +1029,20 @@ let callId = '';
     await open(cp, '#/appel');
     await cp.waitForSelector('.ex-chooser .ex-call-intro');
     assert((await cp.evaluate(() => location.hash)) === '#/appel', 'carte → import du sujet de l’appel');
+  });
+
+  await test('appel · commencer sans sujet, lien vide expliqué dans le champ', async () => {
+    await open(cp, '#/appel');
+    await cp.waitForSelector('.ex-chooser [data-act="start-blank"]');
+    await cp.fill('[data-f="teams"]', '');
+    await cp.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+    await cp.click('[data-b="teams"] [data-act="teams-join"]');
+    await cp.waitForSelector('[data-b="teams"].is-bad [data-f="teams"][aria-invalid="true"]');
+    assert(/Collez d’abord le lien/.test(await cp.textContent('[data-b="teams-hint"]')) && !(await cp.$('.toast')), 'lien vide : message dans le champ, sans toast');
+    await cp.click('[data-act="start-blank"]');
+    await cp.waitForSelector('.ex-call [data-b="live"] .lv-start');
+    assert(await cp.$('.ex-call-subject[open] [data-act="import-subject"]'), 'sujet à importer pendant l’appel');
+    assert((await session(cp)).subject.paragraphs.length === 0, 'appel créé sans sujet');
   });
   await C.ctx.close();
 }
@@ -1169,8 +1200,11 @@ let callId = '';
     await ep.waitForSelector('[data-b="live"] .ex-live-err');
     let e = await err(ep);
     assert(/micro refusé/.test(e.text) && e.acts.includes('assist') && e.acts.includes('pick-src'), 'micro refusé : ' + JSON.stringify(e));
-    for (let i = 0; i < 30 && E.ctx.pages().length > 1; i++) await sleep(100);
-    assert(E.ctx.pages().length === 1, 'fenêtre flottante refermée si le micro est refusé');
+    // La fenêtre flottante reste ouverte et montre la même erreur, avec « Réessayer ».
+    for (let i = 0; i < 30 && E.ctx.pages().length < 2; i++) await sleep(100);
+    const pop = E.ctx.pages()[1];
+    assert(pop, 'fenêtre flottante ouverte au lancement');
+    await pop.waitForSelector('.lv-float .lv-err [data-act="assist"]', { timeout: 5000 });
     // Micro occupé : même chose, message différent.
     await ep.evaluate(() => { window.__examFakes.startError = { code: 'MIC_BUSY', msg: 'Le micro est indisponible (utilisé par une autre application ?).' }; });
     await ep.click('[data-b="live"] .ex-live-err [data-act="assist"]');
@@ -1184,8 +1218,9 @@ let callId = '';
     e = await err(ep);
     assert(e.acts.includes('use-mic'), 'Son du PC absent → « Utiliser le micro » : ' + JSON.stringify(e));
     await ep.evaluate(() => { window.__examFakes.startError = null; window.__examFakes.delay = 60; });
-    const [pop] = await Promise.all([E.ctx.waitForEvent('page'), ep.click('[data-b="live"] .ex-live-err [data-act="use-mic"]')]);
+    await ep.click('[data-b="live"] .ex-live-err [data-act="use-mic"]');
     await ep.waitForSelector('[data-b="live"] .lv-status.on');
+    assert(E.ctx.pages().length === 2, 'une seule fenêtre flottante');
     assert((await ep.evaluate(() => window.__examFakes.audio.preset)) === 'haut-parleur', 'bascule sur le micro');
     await pop.setViewportSize({ width: 760, height: 420 });
     await pop.waitForSelector('.lv-float .lv-status.on');
@@ -1236,16 +1271,17 @@ let callId = '';
     e = await err(ep);
     assert(/micro s’est coupé/.test(e.text), 'son coupé expliqué : ' + JSON.stringify(e));
     assert(await ep.evaluate(() => !window.__examFakes.audio.running && !AideVisio.audio.running), 'flux libérés');
-    for (let i = 0; i < 30 && !pop.isClosed(); i++) await sleep(100);
-    assert(pop.isClosed(), 'fenêtre flottante fermée quand le son est perdu');
-    // Plein écran : Échap pour sortir.
+    await pop.waitForSelector('.lv-float .lv-err [data-act="assist"]', { timeout: 5000 });
+    assert(!pop.isClosed() && /micro s’est coupé/.test(await pop.evaluate(() => [...document.querySelectorAll('.lv-float .lv-err')].map((x) => x.textContent).join(' | '))), 'fenêtre flottante gardée : cause + « Relancer »');
+    // Relance depuis la fenêtre : pas de seconde fenêtre. Puis plein écran : Échap pour sortir.
     await ep.evaluate(() => { window.__examFakes.delay = 120; });
-    const [pop2] = await Promise.all([E.ctx.waitForEvent('page'), ep.click('[data-b="live"] .ex-live-err [data-act="assist"]')]);
+    await pop.click('.lv-float .lv-err [data-act="assist"]');
     await ep.waitForSelector('[data-b="live"] [data-act="full"]');
+    assert(E.ctx.pages().length === 2, 'relance sans seconde fenêtre');
+    const pop2 = pop;
     await ep.click('[data-b="live"] [data-act="full"]');
     await ep.waitForFunction(() => document.fullscreenElement, null, { timeout: 5000 });
-    await ep.waitForFunction(() => /Échap/.test(document.querySelector('[data-b="live"] .lv-head').textContent), null, { timeout: 3000 }).catch(() => {});
-    assert(/Échap/.test(await ep.textContent('[data-b="live"] .lv-head')), 'rappel « Échap » en plein écran');
+    assert(/Échap/.test(await ep.getAttribute('[data-b="live"] [data-act="full"]', 'title')), 'rappel « Échap » dans l’info-bulle du plein écran');
     await ep.keyboard.press('Escape');
     await ep.waitForFunction(() => !document.fullscreenElement, null, { timeout: 5000 });
     await ep.click('[data-b="live"] [data-act="listen-stop"]');
