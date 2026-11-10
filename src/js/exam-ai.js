@@ -976,7 +976,6 @@
   S.examAI = {
     ready, generateSubject, subjectFromText, liveNotes, juryQuestion, answerFeedback, evaluate, translate,
     isJuryQuestion, liveAnswer, juryAnswer,
-    heuristicCovered, normSubject, normEvaluation, CRITERIA, THEMES, COVER_KEYS, KINDS,
-    _internal: { splitImported, similar, fallbackQuestion, applyCaps, splitLive }
+    _internal: { splitImported, splitLive }
   };
 })(window.AideVisio = window.AideVisio || {});

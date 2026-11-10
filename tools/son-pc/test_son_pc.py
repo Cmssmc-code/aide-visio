@@ -22,6 +22,10 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 FIX = HERE.parent.parent / "tests" / "fixtures" / "son-pc"
+# Les .wav de test ne sont pas versionnés (ignorés par *.wav) : sur un clone sans eux, on passe.
+if not all((FIX / n).exists() for n in ("question-culture.wav", "question-salaire.wav")):
+    print("Fichiers son de test absents (tests/fixtures/son-pc) : tests de Son du PC sautés.")
+    sys.exit(0)
 os.environ.setdefault("AIDE_VISIO_MODELE", "base")
 os.environ["AIDE_VISIO_SON_PC_PORT"] = "47899"
 spec = importlib.util.spec_from_file_location("son_pc", HERE / "aidevisio_son_pc.py")

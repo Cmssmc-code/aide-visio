@@ -17,7 +17,6 @@ const PDFJS_CACHE = 'aidevisio-pdfjs';
 const SCOPE = new URL(self.registration ? self.registration.scope : './', self.location.href);
 const INDEX = new URL('index.html', SCOPE).href;
 const SINGLE = new URL('aidevisio.html', SCOPE).href;
-const NEVER = /(^|\.)googleapis\.com$|(^|\.)anthropic\.com$|(^|\.)google\.com$/;
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
@@ -41,8 +40,6 @@ self.addEventListener('activate', (event) => {
     const keys = await caches.keys();
     await Promise.all(keys.filter((k) => k.startsWith(PREFIX) && k !== CACHE).map((k) => caches.delete(k)));
     await self.clients.claim();
-    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    wins.forEach((c) => c.postMessage({ type: 'SW_ACTIVATED', version: VERSION }));
   })());
 });
 
@@ -69,7 +66,6 @@ self.addEventListener('fetch', (event) => {
   let url;
   try { url = new URL(req.url); } catch { return; }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return;
-  if (NEVER.test(url.hostname)) return;
 
   if (url.origin === self.location.origin) {
     if (!url.href.startsWith(SCOPE.href)) return;

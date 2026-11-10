@@ -10,7 +10,6 @@
 
   const DEFAULT_SETTINGS = {
     openaiKey: '', geminiKey: '', claudeKey: '', groqKey: '', rememberKeys: true, provider: 'auto',
-    models: { answer: 'auto', fast: 'auto', prep: 'auto' },
     theme: 'auto', fontScale: 1
   };
 
@@ -96,7 +95,7 @@
       G.addEventListener('storage', (e) => {
         if (e.key === LS_SETTINGS || e.key === KEYS_KEY || e.key === null) {
           settingsCache = null;
-          emitSettings(['*'], true);
+          emitSettings(['*']);
         }
       });
     } catch (e) {  }
@@ -118,7 +117,7 @@
   store.clearAll = async function () {
     [LS, SS].forEach((st) => st.keys().filter((k) => /^aidevisio/i.test(k)).forEach((k) => st.remove(k)));
     settingsCache = null;
-    emitSettings(['*'], false);
+    emitSettings(['*']);
   };
 
   let settingsCache = null;
@@ -155,16 +154,15 @@
     s.rememberKeys = s.rememberKeys !== false;
     if (!['auto', 'openai', 'gemini', 'claude', 'groq'].includes(s.provider)) s.provider = 'auto';
     if (!['auto', 'light', 'dark'].includes(s.theme)) s.theme = 'auto';
-    if (!isObj(s.models)) s.models = clone(DEFAULT_SETTINGS.models);
-    for (const k of ['answer', 'fast', 'prep']) if (!s.models[k]) s.models[k] = 'auto';
+    // Ancien choix manuel des modèles : abandonné, le choix est toujours automatique.
+    delete s.models;
     s.fontScale = U.clamp(Number(s.fontScale) || 1, 0.6, 2.5);
     return s;
   }
 
-  function emitSettings(changed, remote) {
+  function emitSettings(changed) {
     const s = store.settings();
     hidden(s, 'changed', changed);
-    hidden(s, 'remote', !!remote);
     S.bus.emit('settings:changed', s);
   }
 
@@ -182,7 +180,7 @@
     writeKeys(next, next.rememberKeys);
     settingsCache = next;
     const changed = Object.keys(next).filter((k) => JSON.stringify(next[k]) !== JSON.stringify(cur[k]));
-    if (changed.length) emitSettings(changed, false);
+    if (changed.length) emitSettings(changed);
     return clone(next);
   };
 

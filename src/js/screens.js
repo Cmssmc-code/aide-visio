@@ -117,10 +117,7 @@
       getUserMedia: !!md2.getUserMedia,
       getDisplayMedia: !!md2.getDisplayMedia,
       displayAudio: !!md2.getDisplayMedia && /Chrome|Edg\//.test(navigator.userAgent) && !/Android|Mobile/i.test(navigator.userAgent),
-      webSpeech: !!SR(),
-      audioWorklet: !!(window.AudioWorkletNode),
-      wakeLock: 'wakeLock' in navigator,
-      docPiP: 'documentPictureInPicture' in window
+      webSpeech: !!SR()
     }, sup || {});
   }
 
@@ -162,7 +159,7 @@
   // ---------- Données (export / import / effacement) ----------
 
   const LS_LIMIT = 5 * 1024 * 1024;
-  const NO_EXPORT = /^aidevisio\.(keys|models)$/i;
+  const NO_EXPORT = /^aidevisio\.(keys|vaultCode|models(?:\.v\d+)?)$/i;
 
   function lsKeys() {
     const out = [];

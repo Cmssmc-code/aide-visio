@@ -108,11 +108,11 @@
     window.open(t, '_blank', 'noopener');
     return true;
   }
-  function teamsMessage(link, dateText) {
+  function teamsMessage(link) {
     return [
       'Bonjour Audrey,',
       '',
-      `Voici le lien ${meetingApp(link) === 'Meet' ? 'Google Meet' : 'Teams'} de notre oral blanc d’anglais (UE 218)${dateText ? ' ' + dateText : ''} :`,
+      `Voici le lien ${meetingApp(link) === 'Meet' ? 'Google Meet' : 'Teams'} de notre oral blanc d’anglais (UE 218) :`,
       link,
       '',
       'Consignes, comme le jour J :',
@@ -132,7 +132,7 @@
       <label class="label" for="${o.id || 'ex-teams-link'}">${icon('video', 'ico-inline')} ${esc(o.label || 'Lien de la réunion (Teams ou Meet)')}</label>
       <div class="ex-teams-row">
         <input id="${o.id || 'ex-teams-link'}" class="input" type="url" inputmode="url" autocomplete="off" spellcheck="false" data-f="teams" value="${esc(v)}" placeholder="https://teams.microsoft.com/… ou https://meet.google.com/…" aria-describedby="${o.id || 'ex-teams-link'}-hint">
-        <button type="button" class="btn${o.primary ? ' btn-primary' : ''}" data-act="teams-join">${icon('video')}<span>${esc(o.joinLabel || 'Rejoindre')}</span></button>
+        <button type="button" class="btn" data-act="teams-join">${icon('video')}<span>${esc(o.joinLabel || 'Rejoindre')}</span></button>
         ${o.copy ? `<button type="button" class="btn" data-act="teams-copy">${icon('copy')}<span>Copier pour Audrey</span></button>` : ''}
       </div>
       <small class="muted" id="${o.id || 'ex-teams-link'}-hint" data-b="teams-hint">${esc(o.hint || LINK_HINT)}</small>
@@ -831,7 +831,7 @@
     if (solo) {
       actions.push({ label: 'Questions seulement', kind: 'ghost', icon: 'chat', onClick: () => start(s) });
       actions.push({ label: 'Oral complet (1 h de préparation)', kind: 'primary', icon: 'play', onClick: () => startFull(s) });
-    } else actions.push({ label: mode === 'call' ? 'Choisir pour l’appel' : 'Faire passer ce sujet', kind: 'primary', icon: 'play', onClick: () => start(s) });
+    } else actions.push({ label: 'Faire passer ce sujet', kind: 'primary', icon: 'play', onClick: () => start(s) });
     sheet({ title: s.title, body, wide: true, actions });
   }
 
@@ -848,7 +848,7 @@
         <div class="ex-draw-env">${icon('doc')}</div>
         ${themeChip(pick.theme)}
         <p class="ex-draw-q" lang="en">${esc(pick.question)}</p>
-        <p class="small muted">Comme le jour J : texte de presse anglo-saxonne + une question. ${mode === 'jury' ? 'Partagez-le dans Teams ou Meet au lancement de la préparation.' : mode === 'call' ? 'Il reste affiché pendant l’appel.' : 'Le chrono d’1 h démarre quand vous êtes prête.'}</p>
+        <p class="small muted">Comme le jour J : texte de presse anglo-saxonne + une question. ${mode === 'jury' ? 'Partagez-le dans Teams ou Meet au lancement de la préparation.' : 'Le chrono d’1 h démarre quand vous êtes prête.'}</p>
       </div>`;
       body.firstElementChild.classList.add('pop');
     }
@@ -1118,15 +1118,14 @@
     ].filter((x) => !(A.mobile && SPLIT_SRC.includes(x.id)));
     const sel = A.preset || (A.pc === 'ok' ? 'pc-interne' : 'haut-parleur');
     const primary = A.on ? 'btn-danger' : o.quiet ? '' : 'btn-primary';
-    const blocked = !A.on && o.blocked;
     const onErr = A.on && A.state === 'error';
-    const stLabel = blocked ? o.blocked : A.starting ? 'Démarrage…' : onErr ? (A.error || 'Écoute arrêtée.') : A.on ? (o.onLabel || 'J’écoute l’élève (en-GB)') : A.state === 'error' ? (A.error || 'Écoute arrêtée.') : 'Écoute arrêtée';
+    const stLabel = A.starting ? 'Démarrage…' : onErr ? (A.error || 'Écoute arrêtée.') : A.on ? (o.onLabel || 'J’écoute l’élève (en-GB)') : A.state === 'error' ? (A.error || 'Écoute arrêtée.') : 'Écoute arrêtée';
     return `<div class="ex-listen ${A.on ? 'on' : ''}">
 <div class="ex-src"${sources.length < 2 ? ' hidden' : ''} role="radiogroup" aria-label="Source du son">${sources.map((x) => `<button type="button" class="ex-src-opt${sel === x.id ? ' on' : ''}" role="radio" aria-checked="${sel === x.id}" data-src="${x.id}"${A.on || A.starting ? ' disabled' : ''}>
         <span class="ex-src-ic">${icon(x.ic)}</span><span class="ex-src-t"><b>${esc(x.label)}${x.rec ? ' <span class="pill pill-xs pill-ok">Recommandé</span>' : ''}</b><small>${esc(x.sub)}</small></span></button>`).join('')}</div>
       <div class="ex-listen-bar">
         <span class="ex-live-dot ${onErr ? 'err' : A.on ? 'on' : A.state === 'error' ? 'err' : ''}" aria-hidden="true"></span><span class="grow small" role="status" data-b="listen-status">${esc(stLabel)}</span>
-        <button type="button" class="btn btn-sm ${blocked ? '' : primary}" data-act="${A.on ? 'listen-stop' : 'listen-start'}"${A.starting || blocked ? ' disabled' : ''}>${icon(A.on ? 'stop' : 'mic')}<span>${A.on ? 'Arrêter l’écoute' : esc(o.startLabel || 'Écouter l’élève')}</span></button>
+        <button type="button" class="btn btn-sm ${primary}" data-act="${A.on ? 'listen-stop' : 'listen-start'}"${A.starting ? ' disabled' : ''}>${icon(A.on ? 'stop' : 'mic')}<span>${A.on ? 'Arrêter l’écoute' : esc(o.startLabel || 'Écouter l’élève')}</span></button>
       </div>
     </div>`;
   }
@@ -1378,7 +1377,6 @@
         interviewOnly: s.kind === 'solo' && !s.expose.startedAt && !exposeText(s), kind: s.kind, signal: ctrl.signal
       });
       if (!C.alive) return;
-      if (s.evaluation) s.evaluationPrev = s.evaluation;
       s.evaluation = normEval(r);
       C.saveNow();
       if (s.phase === 'review' || s.phase === 'done') {
@@ -1567,7 +1565,6 @@
   function renderJury(root, s) {
     const C = baseController(root, s);
     const L = createListen(C);
-    C.L = L;
     C.notes = { busy: false, lastAt: Date.now(), newChars: 0, ctrl: null };
     C.q = { busy: false, ctrl: null };
     C.ja = { busy: false, ctrl: null, req: null, item: null, error: '', noKey: false, question: '', src: '', prev: null };
@@ -1598,9 +1595,9 @@
       $('[data-b="steps"]', root).innerHTML = stepper(JURY_STEPS, s.phase === 'done' ? 'review' : s.phase, C.reached);
       $('[data-b="clock-box"]', root).innerHTML = clockHTML(clockOf(s));
       const main = $('[data-b="main"]', root);
-      if (s.phase === 'prep') main.innerHTML = prepJuryHTML(s);
-      else if (s.phase === 'expose') main.innerHTML = exposeJuryHTML(s, L.A);
-      else if (s.phase === 'interview') main.innerHTML = interviewJuryHTML(s, L.A);
+      if (s.phase === 'prep') main.innerHTML = prepJuryHTML();
+      else if (s.phase === 'expose') main.innerHTML = exposeJuryHTML(L.A);
+      else if (s.phase === 'interview') main.innerHTML = interviewJuryHTML(L.A);
       else renderReview(main, C);
       paintSide();
       paintTeamsBar();
@@ -1620,7 +1617,7 @@
           <textarea class="input" rows="${s.phase === 'prep' ? 4 : 6}" data-f="jury-notes" placeholder="Remarques, fautes entendues, questions à poser…" aria-label="Notes du jury">${esc(s.expose.juryNotes)}</textarea>
         </section>` : ''}
         <details class="card card-pad ex-details ex-side-corr"${openCorr ? ' open' : ''}><summary><b>Corrigé indicatif</b><span class="small muted"> · pour le jury, ne pas partager</span></summary>${corrigeHTML(s.subject, s.phase === 'prep')}</details>
-        <details class="card card-pad ex-details"${s.phase === 'expose' ? '' : ''}><summary><b>Texte du sujet</b></summary>${subjectHTML(s.subject)}</details>`;
+        <details class="card card-pad ex-details"><summary><b>Texte du sujet</b></summary>${subjectHTML(s.subject)}</details>`;
       const ta = $('[data-f="jury-notes"]', side);
       if (ta) ta.addEventListener('input', () => { s.expose.juryNotes = ta.value; C.saveSoon(); });
       const fab = $('.ex-notes-fab', root);
@@ -1708,7 +1705,7 @@
       </section>`;
     }
 
-    function exposeJuryHTML(st, A) {
+    function exposeJuryHTML(A) {
       const started = !!s.expose.startedAt;
       return `<section class="card card-pad ex-phase">
         <div class="ex-phase-head"><span class="tile tile-violet">${icon('chat')}</span><div><h2 class="h2">Exposé · 15 min</h2><p class="muted small" data-b="zone">Intro (source, date, thème, ton) · synthèse · problématique · commentaire · conclusion</p></div></div>
@@ -1733,7 +1730,7 @@
       <div class="ex-actions-row ex-next-row"><button type="button" class="btn btn-primary btn-lg" data-act="to-interview">${icon('chevron-right')}<span>Passer à l’entretien</span></button></div>`;
     }
 
-    function interviewJuryHTML(st, A) {
+    function interviewJuryHTML(A) {
       const started = !!s.interview.startedAt;
       return `<section class="card card-pad ex-phase ex-qphase">
         <div class="ex-phase-head"><span class="tile tile-green">${icon('person2')}</span><div><h2 class="h2">Entretien · 15 min</h2><p class="muted small">Vérifier la compréhension, faire préciser, nuancer, ouvrir. L’interaction compte.</p></div>
@@ -2601,7 +2598,13 @@
       else if (act === 'to-review') { if (C.ctrl) C.ctrl.abort(); stopSpeak(); stopRec(); C.qa.state = 'idle'; C.setPhase('review'); }
     });
     // Réponse tapée : gardée dans qa.answer pour survivre aux repeints.
-    root.addEventListener('input', (e) => { if (e.target.matches && e.target.matches('[data-f="answer"]')) C.qa.answer = e.target.value; });
+    // Transcription corrigée : enregistrée à chaque frappe, même sans « Passer au jury IA ».
+    root.addEventListener('input', (e) => {
+      const m = e.target.matches ? e.target : null;
+      if (!m) return;
+      if (m.matches('[data-f="answer"]')) C.qa.answer = m.value;
+      else if (m.matches('[data-f="tx"]')) { const v = m.value.trim(); s.expose.transcript = v ? [{ t: 0, text: v }] : []; C.saveSoon(); }
+    });
 
     const offTick = onTick(() => {
       if (!C.alive) return;
@@ -2945,7 +2948,6 @@
       // La fenêtre flottante reste ouverte si le son coupe : elle affiche l'erreur et « Relancer ».
       onStop: () => { C.wantsWake = false; keepAwake(false); if (C.alive) paintLive(); }
     });
-    C.L = L;
     const desk = !isMobileDevice();
     const canFull = () => desk && !!document.fullscreenEnabled;
     // PC ≥ 1100 px : aides en grand à gauche, colonne qui défile à droite (voir live.css).
@@ -3379,12 +3381,11 @@
       }
     }
 
-    // Mots du jury qui ne prolongent pas une question (politesse, consigne).
     // Recolle deux morceaux d'une même phrase : si la suite commence en minuscule, le « ? » ou le « . »
     // posé par la pause au milieu est retiré (« What do you think? about… » → « What do you think about… »).
     // Suite en majuscule après un morceau sans ponctuation finale : un point est ajouté (« …is stable. Could you… »).
     const glue = (a, b) => (/^[a-z]/.test(b) ? a.replace(/[.?!…]+\s*$/, '') : /[A-Za-z0-9]\s*$/.test(a) && /^[A-Z]/.test(b) ? a.trim() + '.' : a) + ' ' + b;
-    const NOT_CONT = /^(?:ok(?:ay)?|all ?right|right|good|great|fine|yes|no|thanks?|thank you|sorry|please|well|so|take your time|go ahead|go on|i see|interesting|perfect|very good)/i;
+    const NOT_CONT = /^(?:ok(?:ay)?|all ?right|right|good|great|fine|yes|no|thanks?|thank you|sorry|please|well|so|take your time|go ahead|go on|i see|interesting|perfect|very good)\b/i;
     C.onHeard = (role, text, ev) => {
       if (!text || !C.alive) return;
       L.A.interim = '';
@@ -3400,7 +3401,6 @@
       if (jury) {
         warmAI();
         R.jury = R.jury.filter((x) => now - x.at < JOIN_MS).concat({ text, at: now });
-        // Suite d'une question coupée par une pause du jury : relance avec la phrase entière tant que rien n'est affiché.
         const joined = R.jury.map((x) => x.text).reduce(glue);
         // Question coupée par une pause du jury : la suite relance la réponse avec la question entière,
         // même si l'IA a commencé à écrire (dans les 6 s, tant que l'élève n'a pas répondu).
@@ -3693,7 +3693,8 @@
     const s = store.get(p.id);
     if (!s) { root.innerHTML = notFoundHTML(); setCurrent({}); return; }
     fixSession(s);
-    if (s.kind === 'call') { go(sessionHash(s)); return; }
+    // Séance jury ou appel : ouverte dans son propre écran (un type inconnu reste ici, sans boucle).
+    if (s.kind === 'call' || s.kind === 'jury') { go(sessionHash(s)); return; }
     renderSolo(root, s);
   });
   const callDef = def((root, p) => {
@@ -3709,7 +3710,6 @@
   }
 
   S.exam = Object.assign(S.exam || {}, {
-    homeDef, store, speakEn, normSubject, newSession, exportMd,
     defs: { oral: oralDef, sujet: def(renderSujet), eleve: eleveDef, appel: callDef, fiches: def(renderFiches), historique: def(renderHistory) }
   });
 
@@ -3727,7 +3727,7 @@
 
   window.addEventListener('beforeunload', (e) => {
     let busy = false;
-    try { busy = !!(CUR && (CUR.busy ? CUR.busy() : (S.audio && S.audio.running && CUR.canLeave))); } catch (er) { busy = false; }
+    try { busy = !!(CUR && CUR.busy && CUR.busy()); } catch (er) { busy = false; }
     if (busy) { flushCurrent(); e.preventDefault(); e.returnValue = ''; }
   });
 })(window.AideVisio = window.AideVisio || {});

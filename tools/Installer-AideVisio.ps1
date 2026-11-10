@@ -6,7 +6,7 @@
 .DESCRIPTION
   Aucun droit administrateur requis. Rien n'est installé en dehors de :
     %LOCALAPPDATA%\Aide Visio\aidevisio.ico   (icône)
-    Bureau\AideVisio.lnk, menu Démarrer\Programmes\AideVisio.lnk
+    Bureau\Aide Visio.lnk, menu Démarrer\Programmes\Aide Visio.lnk
   Compatible Windows PowerShell 5.1 et PowerShell 7.
 
 .PARAMETER Url
@@ -143,8 +143,15 @@ function New-AppShortcut([string]$Path, [string]$Browser, [string]$Icon) {
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
   $shell = New-Object -ComObject WScript.Shell
   $lnk = $shell.CreateShortcut($Path)
-  $lnk.TargetPath = $Browser
-  $lnk.Arguments = "--app=`"$Url`""
+  # Copie du dépôt : passer par le lanceur (relance Son du PC, Chrome à part), comme le raccourci existant.
+  $vbs = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'Lancer-AideVisio.vbs' } else { $null }
+  if ($vbs -and (Test-Path -LiteralPath $vbs)) {
+    $lnk.TargetPath = "$env:WINDIR\System32\wscript.exe"
+    $lnk.Arguments = '"' + $vbs + '" "' + $Url + '"'
+  } else {
+    $lnk.TargetPath = $Browser
+    $lnk.Arguments = "--app=`"$Url`""
+  }
   $lnk.WorkingDirectory = Split-Path -Parent $Browser
   $lnk.Description = $Description
   $lnk.WindowStyle = 1

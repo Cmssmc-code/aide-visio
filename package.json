@@ -1,6 +1,6 @@
 {
   "name": "aidevisio",
-  "version": "2.1.8",
+  "version": "2.1.9",
   "private": true,
   "description": "Aide Visio — simulateur d'oral blanc d'anglais des affaires UE 218 (PWA, hors-ligne, fichier unique)",
   "homepage": "https://cmssmc-code.github.io/aide-visio/",
@@ -22,7 +22,6 @@
     "test:browser": "node tests/docs.test.mjs",
     "test:pwa": "node tools/build.mjs --strict && node tools/check-pwa.mjs",
     "test:all": "npm test && npm run test:browser && npm run test:pwa",
-    "test:docs": "node tests/docs.test.mjs",
     "fixtures:docs": "node tests/fixtures/make-fixtures.mjs",
     "test:son-pc": "python tools/son-pc/test_son_pc.py"
   },

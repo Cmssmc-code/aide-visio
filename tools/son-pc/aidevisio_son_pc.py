@@ -6,8 +6,8 @@ tout le travail audio sur le PC, avec ses propres composants :
 * deux sources captées séparément : le son joué par Windows (boucle WASAPI = voix du correspondant) et le
   micro par défaut (votre voix) ; chacune suit seule les changements de périphérique (casque, Bluetooth) ;
 * découpage en phrases par le détecteur de parole Silero (fourni avec faster-whisper) ;
-* transcription locale par Whisper (faster-whisper, modèle « base » ou « small » selon la vitesse du PC) :
-  aucun service en ligne, aucune clé, aucune limite de Chrome ;
+* transcription des phrases finies par Groq ou OpenAI si la page fournit une clé, sinon par Whisper local
+  (faster-whisper « base », ou le modèle choisi par AIDE_VISIO_MODELE) ; texte en direct toujours local ;
 * attribution certaine : une phrase venue du son du PC est « Jury », une phrase du micro est « Moi » ;
   sans casque, une phrase du micro prononcée pendant que le son du PC parle (écho des haut-parleurs) est
   ignorée.
@@ -15,9 +15,10 @@ tout le travail audio sur le PC, avec ses propres composants :
 Aide Visio (mode « Appel ou visio sur ce PC (son interne) ») s'y connecte en WebSocket :
 
 * ``ws://127.0.0.1:47800/transcription`` — messages JSON. Page → programme : ``{"type": "start", "lang",
-  "hint"}``, ``{"type": "pause"}``, ``{"type": "resume"}``, ``{"type": "stop"}``. Programme → page :
-  ``ready`` {model, devices}, ``level`` {who, rms}, ``speech`` {who, active, t}, ``final`` {who, text, t0, t1,
-  ms}, ``info`` {code, message}, ``drained``. Les temps ``t`` sont en ms depuis l'époque Unix.
+  "hint", "keys": {"groq", "openai"}}``, ``{"type": "pause"}``, ``{"type": "resume"}``, ``{"type": "stop"}``.
+  Programme → page : ``ready`` {model, devices}, ``config`` {stt, devices}, ``level`` {who, rms}, ``speech``
+  {who, active, t}, ``interim`` {who, text, t0}, ``final`` {who, text, t0, t1, ms}, ``idle``, ``info``
+  {code, message}, ``drained``. Les temps ``t`` sont en ms depuis l'époque Unix.
 * ``ws://127.0.0.1:47800/son`` — son du PC brut (en-tête JSON {rate}, puis PCM 16 bits mono), pour les
   configurations où la page transcrit elle-même.
 
@@ -26,7 +27,7 @@ ni écouter le PC ni lire les transcriptions.
 
 Dépendances : pip install pyaudiowpatch numpy websockets faster-whisper psutil
 Lancement : pythonw aidevisio_son_pc.py   (Installer-Son-du-PC.ps1 le lance à chaque ouverture de session)
-Réglages (variables d'environnement) : AIDE_VISIO_MODELE = auto | base | small | tiny (auto par défaut),
+Réglages (variables d'environnement) : AIDE_VISIO_MODELE = auto | base | small | tiny | medium (auto par défaut),
 AIDE_VISIO_SON_PC_PORT (47800).
 Journal : %LOCALAPPDATA%\\Aide Visio\\son-pc.log
 """
@@ -314,9 +315,6 @@ class Segmenter:
         if audio.size >= SR * 0.3:
             self.on_segment(self.who, audio, t0, t1)
 
-    def voiced_ms(self, t0, t1):
-        return 32.0 * sum(1 for v in self.voiced if t0 <= v <= t1)
-
     def take_rms(self):
         r = self.rms_acc / self.rms_n if self.rms_n else 0.0
         self.rms_acc, self.rms_n = 0.0, 0
@@ -327,22 +325,6 @@ HALLUCINATIONS = re.compile(
     r"sous-titr|merci d'avoir regard|abonnez-vous|amara\.org|radio-canada|thanks? for watching|subtitles? by|"
     r"^\W*(merci|musique|applaudissements|thank you|thanks|you|bye|music|applause)\W*$",
     re.I)
-
-
-def on_mains():
-    """Vrai si le PC est sur secteur (ou sans batterie)."""
-    try:
-        import ctypes
-
-        class SPS(ctypes.Structure):
-            _fields_ = [("ACLineStatus", ctypes.c_byte), ("BatteryFlag", ctypes.c_byte),
-                        ("BatteryLifePercent", ctypes.c_byte), ("SystemStatusFlag", ctypes.c_byte),
-                        ("BatteryLifeTime", ctypes.c_ulong), ("BatteryFullLifeTime", ctypes.c_ulong)]
-        s = SPS()
-        ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(s))
-        return s.ACLineStatus != 0
-    except Exception:
-        return True
 
 
 def wav_bytes(audio):
@@ -426,6 +408,7 @@ class Transcriber:
         self.live_cv = threading.Condition()
         self.me_q = deque()
         self.me_cv = threading.Condition()
+        self.me_busy = 0
         threading.Thread(target=self._load, name="modeles", daemon=True).start()
         threading.Thread(target=self._run, name="whisper", daemon=True).start()
         threading.Thread(target=self._run_live, name="whisper-direct", daemon=True).start()
@@ -566,8 +549,11 @@ class Transcriber:
     def pending(self, early=False):
         """Phrases finales en file ou en cours (``early`` : compte aussi les transcriptions anticipées)."""
         kinds = ("final", "early") if early else ("final",)
+        # Vos phrases transcrites en ligne (fil du micro) comptent aussi.
+        with self.me_cv:
+            me = len(self.me_q) + self.me_busy
         with self.cv:
-            return sum(1 for j in self.q if j[2] in kinds) + (1 if self.busy else 0)
+            return sum(1 for j in self.q if j[2] in kinds) + (1 if self.busy else 0) + me
 
     def clear(self):
         with self.cv:
@@ -582,10 +568,16 @@ class Transcriber:
                 while not self.me_q or not self.models:
                     self.me_cv.wait(0.5)
                 who, audio, t0, t1 = self.me_q.popleft()
+                self.me_busy += 1
             try:
                 self._final(who, audio, t0, t1)
             except Exception:
                 log.exception("transcription (micro)")
+            finally:
+                with self.me_cv:
+                    self.me_busy -= 1
+                if not self.pending():
+                    self.emit({"type": "idle"})
 
     def _run(self):
         while True:
@@ -604,10 +596,7 @@ class Transcriber:
                     text, name = self._cloud(audio, who) if kind == "early" else (None, None)
                     if name is None:
                         text, name = self._local(audio, fast=kind == "interim")
-                    if self.on_interim:
-                        self.on_interim(who, t0, t1, text, round((time.time() - start) * 1000), name)
-                    elif text:
-                        self.emit({"type": "interim", "who": who, "text": text, "t0": round(t0)})
+                    self.on_interim(who, t0, t1, text, round((time.time() - start) * 1000), name)
                 else:
                     self._final(who, audio, t0, t1)
             except Exception:
@@ -979,11 +968,6 @@ class Engine:
 
     def status(self):
         return next((p for p, _, _ in CLOUD if self.tr.keys.get(p)), None) or self.tr.current()
-
-    def close(self):
-        self.stop_evt.set()
-        for c in self.caps.values():
-            c.close()
 
 
 BOOST_FILE = LOG_DIR / "son-pc.json"

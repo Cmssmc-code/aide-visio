@@ -39,7 +39,7 @@ function makeEnv(settings = {}) {
     calls: [],
     events: [],
     handler: null,
-    settings: Object.assign({ geminiKey: '', claudeKey: '', rememberKeys: true, provider: 'auto', models: { answer: 'auto', fast: 'auto', prep: 'auto' } }, settings)
+    settings: Object.assign({ geminiKey: '', claudeKey: '', rememberKeys: true, provider: 'auto' }, settings)
   };
   const ctx = {
     console, setTimeout, clearTimeout, setInterval, clearInterval, queueMicrotask,
@@ -146,8 +146,14 @@ test('pick : ordre de repli (Gemini puis Claude), réglage fournisseur, sans cl�
   env.settings.provider = 'claude';
   assert.equal(ai.pick('answer')[0].provider, 'claude');
   env.settings.provider = 'auto';
-  env.settings.models.answer = 'gemini-2.5-flash';
-  assert.equal(ai.pick('answer')[0].model, 'gemini-2.5-flash');
+  env.settings.provider = 'openai';
+  env.settings.openaiKey = 'o-key';
+  assert.equal(ai.pick('live')[0].provider, 'openai', 'réglage OpenAI respecté en direct');
+  env.settings.provider = 'auto';
+  env.settings.openaiKey = '';
+  env.settings.models = { answer: 'gemini-2.5-flash' };
+  assert.notEqual(ai.pick('answer')[0].model, 'gemini-2.5-flash', 'ancien choix manuel ignoré');
+  delete env.settings.models;
   const noKey = makeEnv({});
   assert.equal(noKey.ai.hasKey(), false);
   assert.ok(noKey.ai.pick('answer').length > 0);
@@ -530,6 +536,11 @@ test('transcribe : WAV inline, Gemini uniquement (fast), filtre d\'hallucination
   assert.equal(ai.cleanTranscript('Merci. Merci. Merci. Merci.'), 'Merci.');
   assert.equal(ai.cleanTranscript('[musique] What about your marketing plan?'), 'What about your marketing plan?');
   assert.equal(ai.cleanTranscript('Sous-titrage ST\' 501'), '');
+  assert.equal(ai.cleanTranscript('Subtitles by the Amara.org community'), '');
+  assert.equal(ai.cleanTranscript('Thank you for watching!'), '');
+  assert.equal(ai.cleanTranscript('Please subscribe to my channel.'), '');
+  assert.equal(ai.cleanTranscript('Thank you.'), 'Thank you.');
+  assert.equal(ai.cleanTranscript('Many customers subscribe to our service.'), 'Many customers subscribe to our service.');
   assert.equal(ai.cleanTranscript('Merci de votre attention, à bientôt.'), 'Merci de votre attention, à bientôt.');
   assert.equal(ai.cleanTranscript('non non non, pas du tout'), 'non non non, pas du tout');
   assert.equal(ai.cleanTranscript('très très bien, budget opérationnel de programme'), 'très très bien, budget opérationnel de programme');
@@ -602,8 +613,7 @@ test('maxOutputTokens trop grand → réessai à 8192', async () => {
   e2.handler = (c) => c.body.generationConfig.maxOutputTokens > 9300
     ? err(400, 'The value of max_output_tokens is out of range: must be <= 8192', { status: 'INVALID_ARGUMENT' })
     : gJson('OK');
-  e2.settings.models.answer = 'gemini-2.0-flash';
-  const r2 = await e2.ai.generate({ prompt: 'Q', maxTokens: 12000 });
+  const r2 = await e2.ai.generate({ prompt: 'Q', maxTokens: 12000, model: 'gemini-2.0-flash' });
   assert.equal(r2.text, 'OK');
   assert.equal(e2.calls.at(-1).body.generationConfig.maxOutputTokens, 8192);
 });

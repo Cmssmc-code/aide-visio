@@ -51,7 +51,7 @@ function check(name, cond, info) {
 
   const def = S.store.settings();
   check('réglages par défaut (SPEC)', JSON.stringify(def) === JSON.stringify({
-    openaiKey: '', geminiKey: '', claudeKey: '', groqKey: '', rememberKeys: true, provider: 'auto', models: { answer: 'auto', fast: 'auto', prep: 'auto' },
+    openaiKey: '', geminiKey: '', claudeKey: '', groqKey: '', rememberKeys: true, provider: 'auto',
     theme: 'auto', fontScale: 1
   }), JSON.stringify(def));
   def.theme = 'dark';
@@ -60,7 +60,8 @@ function check(name, cond, info) {
   let evt = null;
   S.bus.on('settings:changed', (s) => { evt = s; });
   S.store.setSettings({ theme: 'dark', models: { answer: 'gemini-3-flash' } });
-  check('setSettings fusion profonde', S.store.settings().models.fast === 'auto' && S.store.settings().models.answer === 'gemini-3-flash');
+  check('setSettings fusion', S.store.settings().theme === 'dark' && S.store.settings().provider === 'auto');
+  check('ancien choix de modèles ignoré', !('models' in S.store.settings()));
   check('setSettings persisté', JSON.parse(local.getItem('aidevisio.settings')).theme === 'dark');
   check('événement settings:changed', evt && evt.theme === 'dark' && evt.changed.includes('theme') && !Object.keys(evt).includes('changed'));
 

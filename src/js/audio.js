@@ -23,14 +23,13 @@
     MIC_BACK: "Micro reconnecté.",
     MIC_MUTED: "Le micro semble coupé (touche de sourdine ou réglage de Windows).",
     DISPLAY_MUTED: "Le son de l'onglet partagé est interrompu.",
-    MIC_SILENT: "Aucun son capté. Parlez pendant le test et vérifiez que le micro n'est pas coupé.",
     NO_MEDIA: "Ce navigateur ne permet pas d'accéder au micro.",
     INSECURE: "Le micro n'est accessible qu'en HTTPS. Ouvrez la version en ligne de Aide Visio.",
-    NO_WEBSPEECH: "La reconnaissance vocale n'est pas disponible dans ce navigateur. Utilisez Chrome ou Edge, ou un mode « transcription IA ».",
+    NO_WEBSPEECH: "La reconnaissance vocale n'est pas disponible dans ce navigateur. Utilisez Chrome ou Edge, ou choisissez « Son de l’appel sur ce PC ».",
     NO_KEY: "Ce choix de son a besoin d'une clé IA (Réglages). Sans clé, choisissez « Micro / haut-parleur ».",
     KEY_ERROR: "Clé IA refusée par la transcription : corrigez-la dans Réglages. Les passages en attente seront transcrits ensuite.",
     NOT_ALLOWED: "Reconnaissance vocale refusée : autorisez le micro pour ce site.",
-    SERVICE_NOT_ALLOWED: "Le service de reconnaissance vocale est bloqué sur ce poste. Choisissez un mode « transcription IA ».",
+    SERVICE_NOT_ALLOWED: "Le service de reconnaissance vocale est bloqué sur ce poste. Choisissez « Son de l’appel sur ce PC ».",
     LANGUAGE: "Langue non prise en charge par la reconnaissance vocale.",
     NETWORK: "Reconnaissance vocale : réseau instable, nouvel essai…",
     AUDIO_CAPTURE: "Le micro ne répond pas, nouvel essai…",
@@ -39,19 +38,19 @@
     TRANSCRIBE_FAILED: "La transcription IA échoue (réseau ou service). Nouvel essai automatique.",
     SEGMENT_RETRY: "Un passage n'a pas pu être transcrit : nouvel essai dans quelques secondes.",
     SEGMENT_LOST: "Une phrase du jury n'a pas pu être transcrite (deux essais ratés) : demandez-lui de la répéter.",
-    QUOTA_WAIT: "Quota Gemini gratuit atteint : transcription en attente (reprise dans {s} s, aucun passage perdu).",
+    QUOTA_WAIT: "Quota de la transcription IA atteint : transcription en attente (reprise dans {s} s, aucun passage perdu).",
     OFFLINE: "Hors ligne : les passages du jury seront transcrits au retour du réseau.",
     ONLINE: "Réseau rétabli.",
     AUDIO_ENGINE: "Impossible de démarrer le moteur audio de ce navigateur.",
     AUDIO_SUSPENDED: "Son en veille : cliquez n'importe où dans la page pour réactiver l'écoute.",
     AUDIO_RESUMED: "Écoute réactivée.",
     DEVICE_CHANGE: "Les périphériques audio ont changé.",
-    DUAL_WEBSPEECH: "Deux reconnaissances vocales simultanées peuvent se gêner : préférez la transcription IA pour l'une des deux voix.",
     WEBSPEECH_TRACK: "Reconnaissance vocale sur une source autre que le micro : nécessite un Chrome récent.",
     WEBSPEECH_TRACK_OFF: "Reconnaissance vocale : retour au micro par défaut de Chrome.",
     PC_AUDIO_OFF: "« Son du PC » n'est pas lancé : double-cliquez sur « Son du PC Aide Visio » (ou choisissez un autre mode).",
     PC_AUDIO_LOST: "« Son du PC » s'est arrêté : reconnexion…",
     PC_AUDIO_BACK: "« Son du PC » reconnecté.",
+    PC_SOUND_BACK: "Le son de l'appel est de nouveau capté.",
     BAD_CONFIG: "Configuration audio invalide.",
     ABORTED: "Démarrage annulé.",
   };
@@ -84,13 +83,7 @@
     };
   }
   const events = createEmitter();
-  const BUS_EVENTS = { state: 1, ended: 1, info: 1 };
-  function emit(evt, data) {
-    events.emit(evt, data);
-    if (BUS_EVENTS[evt] && S.bus && typeof S.bus.emit === 'function') {
-      try { S.bus.emit('audio:' + evt, data); } catch (e) {  }
-    }
-  }
+  function emit(evt, data) { events.emit(evt, data); }
   function info(who, code, kind) {
     emit('info', { who: who || null, code, kind: kind || 'info', message: MSG[code] || code });
   }
@@ -878,111 +871,6 @@ registerProcessor('aidevisio-tap', AideVisioTap);
     if (n === 'InvalidStateError') return 'DISPLAY_NEEDS_GESTURE';
     return 'DISPLAY_UNSUPPORTED';
   }
-  const PC_AUDIO_URL = 'ws://127.0.0.1:47800/son';
-  const PC_WORKLET = `class AideVisioPcAudio extends AudioWorkletProcessor {
-    constructor() { super(); this.q = []; this.cur = null; this.i = 0;
-      this.port.onmessage = (e) => { this.q.push(e.data); if (this.q.length > 60) this.q.splice(0, this.q.length - 10); }; }
-    process(_, outputs) {
-      const out = outputs[0][0];
-      for (let k = 0; k < out.length; k++) {
-        if (!this.cur || this.i >= this.cur.length) { this.cur = this.q.shift() || null; this.i = 0; if (!this.cur) { out.fill(0, k); break; } }
-        out[k] = this.cur[this.i++];
-      }
-      return true;
-    }
-  }
-  registerProcessor('aidevisio-pc-audio', AideVisioPcAudio);`;
-  function openPcSocket(url, timeoutMs) {
-    return new Promise((resolve, reject) => {
-      let ws;
-      try { ws = new WebSocket(url); } catch (e) { reject(audioError('PC_AUDIO_OFF', e)); return; }
-      ws.binaryType = 'arraybuffer';
-      const fail = (e) => { clearTimeout(timer); try { ws.close(); } catch (x) {  } reject(audioError('PC_AUDIO_OFF', e)); };
-      const timer = setTimeout(() => fail(new Error('timeout')), timeoutMs);
-      ws.onerror = () => fail(new Error('connexion refusée'));
-      ws.onclose = (e) => fail(new Error('fermé ' + e.code + ' ' + (e.reason || '')));
-      ws.onmessage = (e) => {
-        if (typeof e.data !== 'string') return;
-        clearTimeout(timer);
-        let head = null;
-        try { head = JSON.parse(e.data); } catch (x) {  }
-        if (!head || !(head.rate > 0)) { fail(new Error('en-tête invalide')); return; }
-        ws.onerror = ws.onclose = ws.onmessage = null;
-        resolve({ ws, head });
-      };
-    });
-  }
-  async function getPcAudio(o = {}) {
-    if (typeof WebSocket !== 'function') throw audioError('PC_AUDIO_OFF');
-    const url = o.url || PC_AUDIO_URL;
-    let { ws, head } = await openPcSocket(url, 2500);
-    const AC = G.AudioContext || G.webkitAudioContext;
-    if (!AC) { try { ws.close(); } catch (e) {  } throw audioError('AUDIO_ENGINE'); }
-    const ctx = new AC({ sampleRate: head.rate, latencyHint: 'interactive' });
-    let node;
-    try {
-      const mod = URL.createObjectURL(new Blob([PC_WORKLET], { type: 'text/javascript' }));
-      try { await ctx.audioWorklet.addModule(mod); } finally { URL.revokeObjectURL(mod); }
-      node = new AudioWorkletNode(ctx, 'aidevisio-pc-audio', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1] });
-    } catch (e) {
-      try { ws.close(); } catch (x) {  }
-      try { ctx.close(); } catch (x) {  }
-      throw audioError('AUDIO_ENGINE', e);
-    }
-    const dest = ctx.createMediaStreamDestination();
-    node.connect(dest);
-    if (ctx.state !== 'running') { try { await ctx.resume(); } catch (e) {  } }
-    let stopped = false, retry = null, lost = false;
-    const wake = () => { if (!stopped && ctx.state !== 'running' && ctx.state !== 'closed') ctx.resume().catch(() => {}); };
-    ctx.onstatechange = wake;
-    const gestures = ['pointerdown', 'keydown'];
-    if (hasDoc) gestures.forEach(g => document.addEventListener(g, wake, true));
-    const wakeTimer = setInterval(wake, 2000);
-    // Un rééchantillonneur par connexion : le périphérique (et sa fréquence) peut changer à la reconnexion.
-    const makeFeed = (rs) => (e) => {
-      if (typeof e.data === 'string') return;
-      const s = new Int16Array(e.data), f = new Float32Array(s.length);
-      for (let k = 0; k < s.length; k++) f[k] = s[k] / 32768;
-      const out = rs ? rs.process(f) : f;
-      node.port.postMessage(out, [out.buffer]);
-    };
-    let stream = null;
-    const attach = (w, rs) => {
-      ws = w;
-      ws.onmessage = makeFeed(rs || null);
-      ws.onclose = () => { if (stopped || ws !== w) return; if (!lost) { lost = true; info('them', 'PC_AUDIO_LOST', 'warn'); } clearTimeout(retry); retry = setTimeout(reconnect, 2000); };
-      // Socket fermé pendant l'initialisation (onclose retiré par openPcSocket) : l'événement est perdu.
-      if (w.readyState >= 2) w.onclose();
-    };
-    const reconnect = async () => {
-      if (stopped) return;
-      try {
-        const r = await openPcSocket(url, 2500);
-        if (stopped) { try { r.ws.close(); } catch (e) {  } return; }
-        const rs = r.head.rate !== ctx.sampleRate ? new Resampler(r.head.rate, ctx.sampleRate) : null;
-        if (stream) stream.pcDevice = r.head.device || stream.pcDevice;
-        if (lost) { lost = false; info('them', 'PC_AUDIO_BACK', 'info'); }
-        attach(r.ws, rs);
-      } catch (e) { if (!stopped) { clearTimeout(retry); retry = setTimeout(reconnect, 2000); } }
-    };
-    attach(ws);
-    stream = dest.stream;
-    const track = stream.getAudioTracks()[0];
-    const stopTrack = track.stop.bind(track);
-    track.stop = () => {
-      stopped = true;
-      clearTimeout(retry);
-      clearInterval(wakeTimer);
-      ctx.onstatechange = null;
-      if (hasDoc) gestures.forEach(g => document.removeEventListener(g, wake, true));
-      try { ws.close(); } catch (e) {  }
-      try { node.disconnect(); } catch (e) {  }
-      try { ctx.close(); } catch (e) {  }
-      stopTrack();
-    };
-    stream.pcDevice = head.device || '';
-    return stream;
-  }
   const LOCAL_URL = 'ws://127.0.0.1:47800/transcription';
   class LocalLink {
     constructor(s, url) {
@@ -1692,7 +1580,6 @@ registerProcessor('aidevisio-tap', AideVisioTap);
       }
       const usesDevices = cfg.them === 'display' || cfg.them === 'mic' || cfg.me === 'mic';
       if (usesDevices && !nav.mediaDevices) throw audioError(mediaUnavailableCode());
-      if (cfg.them && cfg.me && cfg.themEngine === 'webspeech' && cfg.meEngine === 'webspeech') info(null, 'DUAL_WEBSPEECH', 'warn');
 
       let themStream = null, meStream = null;
       const acquired = [];
@@ -1701,8 +1588,8 @@ registerProcessor('aidevisio-tap', AideVisioTap);
           themStream = await getDisplay({ controller: opts.captureController });
           acquired.push(themStream);
         } else if (cfg.them === 'pc') {
-          themStream = await getPcAudio();
-          acquired.push(themStream);
+          // « Son du PC » ne passe que par la transcription locale (branche LocalLink ci-dessus).
+          throw audioError('BAD_CONFIG');
         }
         this.checkAlive();
         const mixedProcessing = { echoCancellation: false, noiseSuppression: true, autoGainControl: true, deviceId: this.micDeviceId };
@@ -2027,7 +1914,7 @@ registerProcessor('aidevisio-tap', AideVisioTap);
     const out = new Set();
     const add = (w, cond) => { if (w && cond) out.add(w); };
     if (/DISPLAY/.test(code)) add(them, cfg.them === 'display');
-    else if (/^PC_AUDIO/.test(code)) { add(them, cfg.them === 'pc' || cfg.local); add(me, !!cfg.local); }
+    else if (/^PC_AUDIO/.test(code)) { add(them, !!cfg.local); add(me, !!cfg.local); }
     else if (/^MIC_/.test(code)) { add(them, cfg.them === 'mic'); add(me, cfg.me === 'mic'); }
     else if (code === 'NO_KEY') { add(them, cfg.themEngine === 'cloud'); add(me, cfg.meEngine === 'cloud'); }
     else if (code === 'NO_WEBSPEECH') { add(them, cfg.themEngine === 'webspeech'); add(me, cfg.meEngine === 'webspeech'); }
@@ -2045,101 +1932,6 @@ registerProcessor('aidevisio-tap', AideVisioTap);
   function pause() { if (current) current.pause(); }
   function resume() { if (current) current.resume(); }
 
-  async function testMic(ms = 3000, o = {}) {
-    const res = { ok: false, peak: 0, rms: 0, label: '' };
-    let stream;
-    try { stream = await getMic({ echoCancellation: true, deviceId: o.deviceId }); }
-    catch (e) { return Object.assign(res, { code: e.code || 'MIC_BUSY', error: e.message }); }
-    const track = stream.getAudioTracks()[0];
-    res.label = (track && track.label) || '';
-    const AC = G.AudioContext || G.webkitAudioContext;
-    let ctx = null, sumSq = 0, n = 0;
-    try {
-      if (!AC) throw audioError('AUDIO_ENGINE');
-      ctx = new AC();
-      if (ctx.state !== 'running') { try { await withTimeout(ctx.resume(), 800); } catch (e) {  } }
-      if (ctx.state !== 'running') { res.code = 'AUDIO_SUSPENDED'; res.error = MSG.AUDIO_SUSPENDED; }
-      const src = ctx.createMediaStreamSource(stream);
-      const an = ctx.createAnalyser();
-      an.fftSize = 2048;
-      src.connect(an);
-      const buf = new Float32Array(an.fftSize);
-      const end = now() + Math.max(300, ms);
-      while (now() < end) {
-        await sleep(66);
-        an.getFloatTimeDomainData(buf);
-        let s2 = 0, p = 0;
-        for (let i = 0; i < buf.length; i++) { const x = buf[i]; s2 += x * x; const a = x < 0 ? -x : x; if (a > p) p = a; }
-        const r = Math.sqrt(s2 / buf.length);
-        if (p > res.peak) res.peak = p;
-        sumSq += r * r; n++;
-        emit('level', { who: 'test', rms: levelToUnit(r), raw: r, peak: p });
-      }
-    } catch (e) {
-      res.code = e.code || 'AUDIO_ENGINE'; res.error = MSG[res.code] || String(e);
-    } finally {
-      stopStream(stream);
-      if (ctx) { try { await ctx.close(); } catch (e) {  } }
-      emit('level', { who: 'test', rms: 0, raw: 0, peak: 0 });
-    }
-    res.rms = n ? Math.sqrt(sumSq / n) : 0;
-    res.peak = Math.round(res.peak * 1000) / 1000;
-    res.ok = res.peak >= 0.02;
-    if (!res.ok && !res.code) { res.code = 'MIC_SILENT'; res.error = MSG.MIC_SILENT; }
-    return res;
-  }
-
-  async function testDisplay(ms = 4000) {
-    const res = { ok: false, hasAudio: false, peak: 0, surface: '', label: '' };
-    let stream;
-    try { stream = await getDisplay(); }
-    catch (e) { return Object.assign(res, { code: e.code, error: e.message }); }
-    res.hasAudio = true;
-    const at = stream.getAudioTracks()[0], vt = stream.getVideoTracks()[0];
-    res.label = (at && at.label) || '';
-    try { res.surface = (vt && vt.getSettings && vt.getSettings().displaySurface) || ''; } catch (e) {  }
-    const AC = G.AudioContext || G.webkitAudioContext;
-    let ctx = null;
-    try {
-      ctx = new AC();
-      if (ctx.state !== 'running') { try { await withTimeout(ctx.resume(), 800); } catch (e) {  } }
-      const an = ctx.createAnalyser();
-      an.fftSize = 2048;
-      ctx.createMediaStreamSource(stream).connect(an);
-      const buf = new Float32Array(an.fftSize);
-      const end = now() + Math.max(300, ms);
-      while (now() < end) {
-        await sleep(66);
-        an.getFloatTimeDomainData(buf);
-        let s2 = 0, p = 0;
-        for (let i = 0; i < buf.length; i++) { const x = buf[i]; s2 += x * x; const a = x < 0 ? -x : x; if (a > p) p = a; }
-        if (p > res.peak) res.peak = p;
-        emit('level', { who: 'test', rms: levelToUnit(Math.sqrt(s2 / buf.length)), raw: Math.sqrt(s2 / buf.length), peak: p });
-      }
-    } catch (e) {  }
-    finally {
-      stopStream(stream);
-      if (ctx) { try { await ctx.close(); } catch (e) {  } }
-    }
-    res.peak = Math.round(res.peak * 1000) / 1000;
-    res.ok = true;
-    res.silent = res.peak < 0.005;
-    return res;
-  }
-
-  async function listDevices() {
-    try {
-      const list = await nav.mediaDevices.enumerateDevices();
-      return list.filter(d => d.kind === 'audioinput').map(d => ({ deviceId: d.deviceId, label: d.label || 'Micro', groupId: d.groupId }));
-    } catch (e) { return []; }
-  }
-
-  function unlock() {
-    const c = current;
-    if (c && c.ctx && c.ctx.state !== 'running') return c.ctx.resume().catch(() => {});
-    return Promise.resolve();
-  }
-
   const api = {
     presets: PRESETS,
     support,
@@ -2148,34 +1940,16 @@ registerProcessor('aidevisio-tap', AideVisioTap);
     pause,
     resume,
     on: (evt, fn) => events.on(evt, fn),
-    off: (evt, fn) => events.off(evt, fn),
-    testMic,
-    testDisplay,
-    listDevices,
-    unlock,
-    setHint(h) { if (current) current.hint = String(h || ''); },
     status() { return current ? current.status() : { running: false, channels: [] }; },
-    videoStream(fps) {
-      const c = current && current.channel('them');
-      const vt = c && c.stream && c.stream.getVideoTracks()[0];
-      if (!vt || vt.readyState === 'ended') return null;
-      try { const p = vt.applyConstraints({ frameRate: { max: fps || 24 } }); if (p && p.catch) p.catch(() => {}); } catch (e) {  }
-      return new MediaStream([vt]);
-    },
     message(code) { return MSG[code] || ''; },
-    messages: MSG,
     _internals: {
       Vad, Resampler, TranscriptionQueue, encodeWav, decodeWav, wavBlob, normalizePeak, levelToUnit,
-      Session, isEcho, spanOverlap, isDuplicateText: (a, b) => isEcho({ text: a, t: 0 }, { text: b, t: 0 }), resolveConfig, WORKLET_SRC,
-      get session() { return current; },
+      Session, isEcho, spanOverlap, resolveConfig,
     },
   };
   Object.defineProperties(api, {
     who: { enumerable: true, get() { const c = current && current.channel('me'); return c ? c.who : null; } },
     running: { enumerable: true, get() { return !!current; } },
-    paused: { enumerable: true, get() { return !!(current && current.paused); } },
-    config: { enumerable: true, get() { return current ? Object.assign({}, current.cfg) : null; } },
-    t0: { enumerable: true, get() { return current ? current.t0 : 0; } },
   });
   S.audio = api;
 })(window.AideVisio = window.AideVisio || {});

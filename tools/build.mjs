@@ -10,7 +10,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = parseArgs(process.argv.slice(2));
 const SRC = path.resolve(ROOT, args.src || 'src');
 const OUT = path.resolve(ROOT, args.out || path.join('dist', 'site'));
-const BASE = normalizeBase(args.base || basePathFromPackage() || '/aidevisio/');
+const BASE = normalizeBase(args.base || basePathFromPackage() || '/aide-visio/');
 const STRICT = !!args.strict;
 
 const EXPECTED_JS = ['js/util.js', 'js/store.js', 'js/vault.js', 'js/docs.js', 'js/ai.js', 'js/audio.js', 'js/app.js', 'js/devices.js', 'js/screens.js',
@@ -114,13 +114,6 @@ for (const file of listFiles(SRC)) {
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.copyFileSync(file, dest);
   copied.push(r);
-}
-for (const tool of ['AideVisio.cmd', 'Installer-AideVisio.ps1']) {
-  const file = path.join(ROOT, 'tools', tool);
-  if (!fs.existsSync(file)) continue;
-  fs.mkdirSync(path.join(OUT, 'pc'), { recursive: true });
-  fs.copyFileSync(file, path.join(OUT, 'pc', tool));
-  copied.push('pc/' + tool);
 }
 fs.writeFileSync(path.join(OUT, '.nojekyll'), '');
 

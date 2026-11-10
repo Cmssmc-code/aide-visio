@@ -44,11 +44,6 @@
     return (s || 'aidevisio').slice(0, max || 60).replace(/-+$/, '');
   };
 
-  U.clone = function (obj) {
-    if (obj == null) return obj;
-    return JSON.parse(JSON.stringify(obj));
-  };
-
   U.sleep = function (ms, signal) {
     return new Promise((resolve, reject) => {
       if (signal && signal.aborted) { reject(abortError()); return; }
@@ -130,31 +125,6 @@
     const payload = { msg: text, text, kind: kind || 'info' };
     const n = S.bus.emit('toast', payload);
     if (!n) { try { (payload.kind === 'err' ? console.error : console.info)('[Aide Visio]', payload.msg); } catch (e) {} }
-  };
-
-  U.download = function (blobOrText, filename, mime) {
-    const blob = blobOrText instanceof Blob ? blobOrText : new Blob([String(blobOrText)], { type: mime || 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = filename || 'aidevisio.txt'; a.rel = 'noopener';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
-  };
-
-  U.copy = async function (text) {
-    text = String(text == null ? '' : text);
-    try {
-      if (navigator.clipboard && G.isSecureContext !== false) { await navigator.clipboard.writeText(text); return true; }
-    } catch (e) {  }
-    try {
-      const ta = document.createElement('textarea');
-      ta.value = text; ta.setAttribute('readonly', '');
-      ta.style.cssText = 'position:fixed;top:-1000px;opacity:0';
-      document.body.appendChild(ta); ta.select();
-      const ok = document.execCommand('copy');
-      ta.remove();
-      return !!ok;
-    } catch (e) { return false; }
   };
 
   const PH_RE = /\u0001(\d+)\u0002/g;

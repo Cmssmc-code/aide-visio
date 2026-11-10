@@ -727,21 +727,15 @@ button.list-row:active, a.list-row:active { background: var(--fill); }
 .app-icon svg.ico { width: 32px; height: 32px; stroke-width: 2.2; }
 
 .home-sub { margin: 4px 0 0; font-size: 17px; color: var(--text-2); letter-spacing: -.012em; }
-.home-tools { display: flex; align-items: center; gap: 8px; }
 .home-head { position: relative; }
 @media (max-width: 760px) {
   .home-head { padding-top: 18px; }
-  .home-tools { position: absolute; top: 18px; right: 0; }
   .brand { flex-direction: column; align-items: flex-start; gap: 14px; }
   
   .app-icon { width: 54px; height: 54px; border-radius: 15px; }
 }
-.home-tools .icon-btn { background: var(--glass); box-shadow: inset 0 0 0 1px var(--glass-stroke), var(--shadow-sm); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); }
-.home-tools .icon-btn:hover { background: var(--glass-strong); }
 
-.banner { display: flex; align-items: center; gap: 16px; padding: 16px 16px 16px 18px; margin-bottom: 18px; }
 
-@media (max-width: 640px) { .banner { flex-wrap: wrap; } .banner .btn { width: 100%; } }
 
 .eyebrow { display: inline-flex; align-items: center; gap: 6px; font: 650 12.5px/1 var(--font); text-transform: uppercase; letter-spacing: .06em; color: var(--accent-text); }
 .eyebrow svg.ico { width: 15px; height: 15px; }
@@ -755,9 +749,6 @@ button.list-row:active, a.list-row:active { background: var(--fill); }
 .step-n { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 50%; font: 700 14px/1 var(--font); color: var(--accent-text); background: var(--accent-soft); }
 @media (max-width: 760px) { .steps { grid-template-columns: minmax(0, 1fr); } }
 
-.home-foot { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 18px; margin: 36px 0 8px; font-size: 13px; color: var(--text-3); }
-.home-foot span { display: inline-flex; align-items: center; gap: 6px; }
-.home-foot svg.ico { width: 15px; height: 15px; }
 
 
 .search { position: relative; display: inline-flex; align-items: center; height: 34px; min-width: 150px; border-radius: 999px; background: var(--fill); }

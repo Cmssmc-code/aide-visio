@@ -402,15 +402,11 @@
     if (pref === 'claude') return ['claude', 'openai', 'gemini', 'groq'];
     if (pref === 'groq') return ['groq', 'openai', 'gemini', 'claude'];
     if (pref === 'gemini') return ['gemini', 'openai', 'claude', 'groq'];
+    if (pref === 'openai') return ['openai', 'gemini', 'claude', 'groq'];
     // Pendant l'appel, la vitesse prime. Mesuré le 10/11/2026 (réponse entière) : Groq 0,5 à 1,2 s,
     // Gemini lite 1,5 s, OpenAI 1,5 à 6 s. Quota Groq atteint : refus immédiat, le suivant prend le relais.
     if (purpose === 'live' || purpose === 'fast') return ['groq', 'gemini', 'openai', 'claude'];
     return ['openai', 'gemini', 'claude', 'groq'];
-  }
-
-  // 'live' = aide en direct pendant l'appel (réponse proposée) : modèle choisi comme 'answer' dans les réglages.
-  function settingPurpose(purpose) {
-    return purpose === 'fast' ? 'fast' : purpose === 'prep' ? 'prep' : 'answer';
   }
 
   function parseModelRef(ref) {
@@ -427,15 +423,11 @@
   function rankAll(purpose, keysOnly) {
     const s = settings();
     const provs = providerOrder(s, purpose).filter(p => !keysOnly || keyOf(p));
-    let list = [];
+    const list = [];
     provs.forEach(p => {
       const ids = modelsFor(p);
       (p === 'openai' ? rankOpenai(ids) : p === 'gemini' ? rankGemini(ids, purpose) : p === 'claude' ? rankClaude(ids, purpose) : rankGroq(ids)).forEach(m => list.push({ provider: p, model: m }));
     });
-    const pref = parseModelRef(s.models && s.models[settingPurpose(purpose)]);
-    if (pref && (!keysOnly || keyOf(pref.provider))) {
-      list = [pref].concat(list.filter(c => !(c.provider === pref.provider && c.model === pref.model)));
-    }
     return list;
   }
 
@@ -482,8 +474,7 @@
     if (o.providers) list = list.filter(c => o.providers.indexOf(c.provider) >= 0);
     if (o.parts && o.parts.length) list = list.filter(c => supportsParts(c.provider, o.parts));
     if (o.liteOnly) {
-      const pref = parseModelRef(settings().models && settings().models[settingPurpose(o.purpose)]);
-      const keep = list.filter(c => /lite/i.test(c.model) || (pref && c.provider === pref.provider && c.model === pref.model));
+      const keep = list.filter(c => /lite/i.test(c.model));
       list = keep.length ? keep.concat(list.filter(c => keep.indexOf(c) < 0)) : list;
     }
     const forced = parseModelRef(o.model);
@@ -855,7 +846,11 @@
           }
           break;
         }
-        if (e && (e.code === 'QUOTA' || e.code === 'SERVER' || e.code === 'TIMEOUT')) trip({ provider: 'groq', model }, config.breakerMs, e.code);
+        // Même durées que generate() : une coupure courte ou un quota par minute ne bloque pas Whisper 5 min.
+        if (e && (e.code === 'QUOTA' || e.code === 'SERVER' || e.code === 'TIMEOUT')) {
+          const ms = e.code === 'TIMEOUT' ? 60000 : (e.code === 'QUOTA' && e.quotaKind === 'minute') ? Math.max(60000, e.retryAfterMs || 0) : config.breakerMs;
+          trip({ provider: 'groq', model }, ms, e.code);
+        }
       } finally { att.done(); }
     }
     throw lastErr || aiError('ALL_FAILED', 'La transcription est indisponible pour le moment : réessayez dans un instant.');
@@ -1255,7 +1250,11 @@
   }
 
   const HALLUCINATIONS = [
-    /(?:sous-?titr[^.\n]*?)?(?:la communauté d')?amara\.org\b[^.\n]*\.?/gi,
+    /(?:(?:sous-?titr|subtitl|caption)[^.\n]*?)?(?:la communauté d'|the )?amara\.org\b[^.\n]*\.?/gi,
+    // Whisper en anglais (langue par défaut) invente aussi ces phrases de fin de vidéo.
+    /(?:subtitles?|captions?)\s+(?:by|from)\b[^.\n]*\.?/gi,
+    /thanks? (?:you )?(?:so much )?for watching[^.!\n]*[.!]?/gi,
+    /(?:please (?:like and )?subscribe|like and subscribe|subscribe to (?:the|my|our) channel)[^.!\n]*[.!]?/gi,
     /sous-?titr(?:es|age)\s+(?:réalisés?\s+)?(?:par|de)\b[^.\n]*\.?/gi,
     /sous-?titrage\s+(?:st'?\s*\d+|société radio-canada|fr\b)[^.\n]*\.?/gi,
     /merci d'avoir regardé(?: cette vidéo)?\s*[.!]?/gi,
@@ -1387,14 +1386,6 @@
     return { lastOk, breaker: list, noThinking: Array.from(noThinking), keyErrors: Object.keys(deadKeys) };
   }
 
-  function reset() {
-    breaker.clear();
-    noThinking.clear();
-    noMinimal.clear();
-    Object.keys(deadKeys).forEach(k => { delete deadKeys[k]; });
-    lastOk = null;
-  }
-
   // Réchauffage : ouvre à l'avance la connexion (DNS + TLS) vers le fournisseur qui répondra,
   // pour gagner 100 à 300 ms sur la 1re réponse. À appeler quand l'aide en direct démarre
   // ou dès que le jury commence à parler. Sans effet hors navigateur ou sans clé.
@@ -1425,7 +1416,7 @@
 
   S.ai = {
     hasKey, canPeek, discover, pick, generate, transcribe, extractFile, test, warm,
-    config, state, reset, parseJson: parseJsonLoose, cleanTranscript, thinkingFor, FALLBACK
+    config, state, parseJson: parseJsonLoose, cleanTranscript, thinkingFor
   };
   if (typeof document !== 'undefined' && typeof setTimeout === 'function') setTimeout(() => { if (hasKey()) warm('live', { connectOnly: true }); }, 1500);
 })(window.AideVisio = window.AideVisio || {});

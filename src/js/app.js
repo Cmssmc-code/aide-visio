@@ -15,7 +15,6 @@
   const ICONS = {
     plus: '<path d="M12 5v14M5 12h14"/>',
     mic: '<rect x="9" y="2.75" width="6" height="11.5" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.75 21h6.5"/>',
-    'mic-slash': '<path d="M15 9.5V5.75a3 3 0 0 0-5.6-1.5M9 9v2.25a3 3 0 0 0 5 2.2M5.5 11a6.5 6.5 0 0 0 10.9 4.8M18.5 11c0 .8-.15 1.6-.4 2.3M12 17.5V21M8.75 21h6.5M3.5 3.5l17 17"/>',
     waveform: '<path d="M4 10v4M8 7v10M12 3.5v17M16 6.5v11M20 9.5v5"/>',
     sparkles: '<path d="M10 3.5l1.6 4.9 4.9 1.6-4.9 1.6L10 16.5l-1.6-4.9L3.5 10l4.9-1.6z"/><path d="M18 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/><path d="M18.5 3v3M17 4.5h3"/>',
     doc: '<path d="M14 3H7.5A2.5 2.5 0 0 0 5 5.5v13A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V8z"/><path d="M14 3v3.5A1.5 1.5 0 0 0 15.5 8H19M9 13h6M9 16.5h4"/>',
@@ -26,7 +25,6 @@
     gear: '<path d="M12.22 2.75h-.44a1.9 1.9 0 0 0-1.9 1.9v.17a1.9 1.9 0 0 1-.95 1.64l-.41.24a1.9 1.9 0 0 1-1.9 0l-.14-.08a1.9 1.9 0 0 0-2.6.7l-.22.37a1.9 1.9 0 0 0 .7 2.6l.14.09a1.9 1.9 0 0 1 .95 1.63v.48a1.9 1.9 0 0 1-.95 1.65l-.14.08a1.9 1.9 0 0 0-.7 2.6l.22.37a1.9 1.9 0 0 0 2.6.7l.14-.08a1.9 1.9 0 0 1 1.9 0l.41.24a1.9 1.9 0 0 1 .95 1.64v.17a1.9 1.9 0 0 0 1.9 1.9h.44a1.9 1.9 0 0 0 1.9-1.9v-.17a1.9 1.9 0 0 1 .95-1.64l.41-.24a1.9 1.9 0 0 1 1.9 0l.14.08a1.9 1.9 0 0 0 2.6-.7l.22-.37a1.9 1.9 0 0 0-.7-2.6l-.14-.08a1.9 1.9 0 0 1-.95-1.65v-.48a1.9 1.9 0 0 1 .95-1.63l.14-.09a1.9 1.9 0 0 0 .7-2.6l-.22-.37a1.9 1.9 0 0 0-2.6-.7l-.14.08a1.9 1.9 0 0 1-1.9 0l-.41-.24a1.9 1.9 0 0 1-.95-1.64v-.17a1.9 1.9 0 0 0-1.9-1.9z"/><circle cx="12" cy="12" r="3"/>',
     'chevron-left': '<path d="M14.5 5.5 8 12l6.5 6.5"/>',
     'chevron-right': '<path d="M9.5 5.5 16 12l-6.5 6.5"/>',
-    'chevron-down': '<path d="M5.5 9.5 12 16l6.5-6.5"/>',
     trash: '<path d="M4 6.5h16M9.5 6.5V4.75c0-.7.55-1.25 1.25-1.25h2.5c.7 0 1.25.55 1.25 1.25V6.5M6 6.5l.9 12.1A2.5 2.5 0 0 0 9.4 21h5.2a2.5 2.5 0 0 0 2.5-2.4L18 6.5M10 10.5v6M14 10.5v6"/>',
     export: '<path d="M12 14.5V3.5M8 7.5l4-4 4 4"/><path d="M8.5 10.5H7A2.5 2.5 0 0 0 4.5 13v5.5A2.5 2.5 0 0 0 7 21h10a2.5 2.5 0 0 0 2.5-2.5V13a2.5 2.5 0 0 0-2.5-2.5h-1.5"/>',
     import: '<path d="M12 3.5v11M8 10.5l4 4 4-4"/><path d="M8.5 7.5H7A2.5 2.5 0 0 0 4.5 10v8.5A2.5 2.5 0 0 0 7 21h10a2.5 2.5 0 0 0 2.5-2.5V10A2.5 2.5 0 0 0 17 7.5h-1.5"/>',
@@ -47,7 +45,6 @@
     info: '<circle cx="12" cy="12" r="8.75"/><path d="M12 11v5.5M12 7.75h.01"/>',
     graduation: '<path d="M2.5 9 12 4.5 21.5 9 12 13.5z"/><path d="M6.5 11v4.75c0 1.5 2.5 3 5.5 3s5.5-1.5 5.5-3V11M21.5 9v5"/>',
     list: '<path d="M9 6.5h11M9 12h11M9 17.5h11M4.5 6.5h.01M4.5 12h.01M4.5 17.5h.01"/>',
-    phone: '<path d="M5.2 3.5h2.7c.5 0 .9.3 1 .8l.9 3.6c.1.4 0 .8-.3 1.1L7.8 10.7a12.5 12.5 0 0 0 5.5 5.5l1.7-1.7c.3-.3.7-.4 1.1-.3l3.6.9c.5.1.8.5.8 1v2.7c0 .9-.7 1.7-1.7 1.7C10.3 20.5 3.5 13.7 3.5 5.2c0-1 .8-1.7 1.7-1.7z"/>',
     video: '<rect x="2.5" y="6" width="13" height="12" rx="3"/><path d="M15.5 10.5 21.5 7v10l-6-3.5"/>',
     speaker: '<path d="M3.5 9.75v4.5c0 .55.45 1 1 1H7.5l4.5 4V4.75l-4.5 4H4.5c-.55 0-1 .45-1 1z"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>',
     shield: '<path d="M12 3 19.5 6v5.5c0 4.6-3.2 8.4-7.5 9.5-4.3-1.1-7.5-4.9-7.5-9.5V6z"/><path d="M8.75 12.25l2.25 2.25 4.25-4.5"/>',
@@ -55,22 +52,14 @@
     home: '<path d="M3.5 10.5 12 3.75l8.5 6.75"/><path d="M5.5 9v9.5A1.5 1.5 0 0 0 7 20h3.25v-5.5h3.5V20H17a1.5 1.5 0 0 0 1.5-1.5V9"/>',
     edit: '<path d="M4 20h4.2L19.1 9.1a2.6 2.6 0 0 0-3.7-3.7L4.5 16.3 4 20z"/><path d="M13.75 7.25l3 3"/>',
     search: '<circle cx="10.75" cy="10.75" r="6.75"/><path d="m20 20-4.5-4.5"/>',
-    calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
-    building: '<path d="M4.5 21V5.5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2V21M15.5 9.5H18a2 2 0 0 1 2 2V21M3 21h18M8.5 7.5h3M8.5 11h3M8.5 14.5h3"/>',
-    send: '<path d="M12 19V5.5M6.5 11 12 5.5 17.5 11"/>',
     ellipsis: '<path d="M6 12h.01M12 12h.01M18 12h.01" stroke-width="2.6"/>',
     key: '<circle cx="8" cy="15" r="4.5"/><path d="M11.2 11.8 20 3M17 6l2.5 2.5M14.5 8.5l2 2"/>',
     chat: '<path d="M20.5 11.5c0 4.1-3.8 7.5-8.5 7.5-1.2 0-2.3-.2-3.3-.6L3.5 20l1.4-3.9c-.9-1.3-1.4-2.9-1.4-4.6C3.5 7.4 7.3 4 12 4s8.5 3.4 8.5 7.5z"/>',
     lightbulb: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.2h5c0-.9.4-1.7 1.1-2.2A6 6 0 0 0 12 3z"/>',
-    clipboard: '<rect x="5" y="4.5" width="14" height="16.5" rx="2.5"/><path d="M9 4.5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v.5a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1zM9 11h6M9 14.5h6M9 18h3.5"/>',
     lock: '<rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>',
     globe: '<circle cx="12" cy="12" r="8.75"/><path d="M3.25 12h17.5M12 3.25c2.3 2.4 3.5 5.3 3.5 8.75s-1.2 6.35-3.5 8.75c-2.3-2.4-3.5-5.3-3.5-8.75S9.7 5.65 12 3.25z"/>',
     star: '<path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"/>',
-    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/>',
-    moon: '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>',
     'text-size': '<path d="M3 18 8 6l5 12M4.6 14h6.8M14.5 18l3.25-8L21 18M15.5 15.5h4.5"/>',
-    'arrow-down': '<path d="M12 4.5v15M6 13.5l6 6 6-6"/>',
-    quote: '<path d="M9.5 7H6.5a2 2 0 0 0-2 2v2.5a2 2 0 0 0 2 2h3V15a3 3 0 0 1-3 3M19.5 7h-3a2 2 0 0 0-2 2v2.5a2 2 0 0 0 2 2h3V15a3 3 0 0 1-3 3"/>',
     target: '<circle cx="12" cy="12" r="8.75"/><circle cx="12" cy="12" r="4.75"/><circle cx="12" cy="12" r=".9" fill="currentColor"/>'
   };
   function icon(name, cls) {
@@ -220,26 +209,6 @@
     a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 4000);
   }
-  async function wipeDevice() {
-    if (typeof S.store.clearAll === 'function') await S.store.clearAll();
-    [window.localStorage, window.sessionStorage].forEach((stg) => {
-      try { Object.keys(stg).filter((k) => /^aidevisio/i.test(k)).forEach((k) => stg.removeItem(k)); } catch (e) {  }
-    });
-    try { sessionStorage.clear(); } catch (e) {  }
-    toast('Vos données ont été effacées de ce PC.', 'ok');
-    setTimeout(() => { location.hash = '#/'; location.reload(); }, 900);
-  }
-  function cleanupSheet() {
-    return sheet({
-      title: 'Effacer vos données de ce PC',
-      body: '<p>Supprime de ce navigateur vos oraux blancs, les sujets importés, les réglages et vos clés IA.</p>',
-      actions: [
-        { label: 'Annuler', kind: 'ghost' },
-        { label: 'Tout effacer', kind: 'danger', onClick: () => wipeDevice() }
-      ]
-    });
-  }
-
   async function copy(text) {
     try { await navigator.clipboard.writeText(text); return true; } catch (e) {
       const ta = document.createElement('textarea');
@@ -293,31 +262,7 @@
     if (p) p.hidden = !off;
   }
 
-  let installEvt = null;
-  window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    installEvt = e;
-    $$('.install-btn').forEach((b) => { b.hidden = false; });
-  });
-  window.addEventListener('appinstalled', () => {
-    installEvt = null;
-    $$('.install-btn').forEach((b) => { b.hidden = true; });
-    toast('Aide Visio est installé sur cet appareil.', 'ok');
-  });
-  async function installApp() {
-    if (!installEvt) {
-      sheet({
-        title: 'Installer Aide Visio',
-        body: `<div class="stack"><p class="sheet-text">Dans Chrome ou Edge sur PC : menu ${icon('ellipsis', 'ico-inline')} puis <b>Installer Aide Visio</b> (ou l’icône d’installation dans la barre d’adresse).</p><p class="sheet-text">Sur Android : menu ⋮ puis <b>Ajouter à l’écran d’accueil</b>.</p><p class="sheet-text muted">Sans installation, Aide Visio fonctionne aussi dans un simple onglet, ou en fichier unique <b>aidevisio.html</b>.</p></div>`,
-        actions: [{ label: 'OK', kind: 'primary' }]
-      });
-      return;
-    }
-    installEvt.prompt();
-    try { await installEvt.userChoice; } catch (e) {  }
-    installEvt = null;
-    $$('.install-btn').forEach((b) => { b.hidden = true; });
-  }
+  window.addEventListener('appinstalled', () => toast('Aide Visio est installé sur cet appareil.', 'ok'));
 
   let swReloadAsked = false;
   function registerSW() {
@@ -333,7 +278,7 @@
         const home = /^#?\/?$/.test(location.hash || '');
         if (home && Date.now() - born < 20000) {
           swReloadAsked = true;
-          try { w.postMessage({ type: 'SKIP_WAITING' }); w.postMessage('SKIP_WAITING'); } catch (e) {  }
+          try { w.postMessage({ type: 'SKIP_WAITING' }); } catch (e) {  }
           setTimeout(() => { if (swReloadAsked) location.reload(); }, 2500);
           return;
         }
@@ -360,7 +305,7 @@
     requestAnimationFrame(() => b.classList.add('in'));
     $('.btn-primary', b).addEventListener('click', async () => {
       swReloadAsked = true;
-      try { worker.postMessage({ type: 'SKIP_WAITING' }); worker.postMessage('SKIP_WAITING'); } catch (e) {  }
+      try { worker.postMessage({ type: 'SKIP_WAITING' }); } catch (e) {  }
       setTimeout(() => { if (swReloadAsked) location.reload(); }, 2500);
     });
     $('.icon-btn', b).addEventListener('click', () => { b.classList.remove('in'); setTimeout(() => { b.hidden = true; }, 250); });
@@ -380,19 +325,14 @@
     const raw = String(hash == null ? location.hash : hash).replace(/^#\/?/, '');
     const qi = raw.indexOf('?');
     const path = qi >= 0 ? raw.slice(0, qi) : raw;
-    const query = qi >= 0 ? raw.slice(qi + 1) : '';
     const parts = path.split('/').filter(Boolean).map((p) => { try { return decodeURIComponent(p); } catch (e) { return p; } });
     const name = parts.shift() || '';
     const params = parts.slice();
     params.id = parts[0];
-    params.sessionId = parts[1];
-    params.query = {};
-    try { new URLSearchParams(query).forEach((v, k) => { params.query[k] = v; }); } catch (e) {  }
     return { name, params };
   }
 
   S.app = Object.assign(S.app || {}, {
-    version: '2.0',
     register(name, def) {
       routes[String(name || '').replace(/^#?\/?/, '')] = def;
       if (booted && current && current.name === name) route(true);
@@ -402,15 +342,8 @@
       if (location.hash === target || (target === '#/' && (location.hash === '' || location.hash === '#'))) route(true);
       else location.hash = target;
     },
-    params() { return current ? current.params : parseHash().params; },
-    current() { return current ? { name: current.name, params: current.params } : parseHash(); },
     refresh() { return route(true); },
-    wipeDevice,
-    cleanupSheet,
-    install: installApp,
-    canInstall() { return !!installEvt; },
-    unlockVault,
-    showUpdate(worker) { showUpdateBanner(worker || { postMessage() {} }); }
+    unlockVault
   });
 
   // Lien d'installation des clés : #/cles?d=<base64url JSON>. Le fragment ne quitte jamais le PC ;

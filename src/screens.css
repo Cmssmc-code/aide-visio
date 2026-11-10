@@ -105,7 +105,6 @@
 }
 .st-preview .muted { font-size: 13px; }
 
-.st-danger, .st-danger .list-main b { color: var(--sc-err); }
 .st-about { display: flex; align-items: flex-start; gap: 8px; padding: 0 8px; margin: 0; }
 .st-about svg { flex: none; width: 16px; height: 16px; margin-top: 2px; }
 
@@ -165,7 +164,6 @@
 .dg-row.is-info .dg-advice,
 .dg-row.is-idle .dg-advice { background: var(--sc-tint); }
 .dg-meter { display: block; width: 100%; max-width: 340px; height: 8px; margin-top: 8px; }
-.dg-meter.is-indet { animation: sc-pulse .8s ease-in-out infinite alternate; }
 .dg-foot { display: flex; align-items: flex-start; gap: 8px; padding: 0 8px; margin: 0; }
 .dg-foot svg { flex: none; width: 16px; height: 16px; margin-top: 2px; }
 
@@ -182,7 +180,6 @@
 }
 
 @keyframes sc-pop { from { opacity: 0; transform: scale(.7); } to { opacity: 1; transform: none; } }
-@keyframes sc-pulse { from { opacity: .35; } to { opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
   .sc *, .sc *::before {

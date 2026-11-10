@@ -116,13 +116,6 @@
     try { if (stream) stream.getTracks().forEach((t) => t.stop()); } catch (e) {  }
   }
 
-  // Envoie le son d'un <audio>/<video> ou d'un AudioContext vers la sortie choisie.
-  async function applySpeaker(target) {
-    const id = await resolve('speaker');
-    if (!target || typeof target.setSinkId !== 'function') return false;
-    try { await target.setSinkId(id || ''); return true; } catch (e) { return false; }
-  }
-
   async function permission(kind) {
     const name = kind === 'camera' ? 'camera' : 'microphone';
     try {
@@ -300,7 +293,7 @@
       case 'no-speech':
         return { title: 'Rien entendu.', advice: 'Dites « hello » bien fort, près du PC, juste après avoir cliqué.' };
       case 'audio-capture':
-        return { title: 'La dictée ne trouve pas le micro.', advice: 'La dictée de Chrome utilise le micro par défaut de Windows : Paramètres Windows → Système → Son → Entrée → choisissez « Onboard MIC ».' };
+        return { title: 'La dictée ne trouve pas le micro.', advice: 'La dictée de Chrome utilise le micro par défaut de Windows : Paramètres Windows → Système → Son → Entrée → choisissez votre micro.' };
       case 'network':
         return { title: 'Le service de dictée de Google ne répond pas.', advice: 'La dictée a besoin d’internet. Vérifiez le wifi, ou coupez le VPN / pare-feu, puis relancez.' };
       case 'language-not-supported':
@@ -390,7 +383,7 @@
 
   S.devices = {
     list, hasLabels, chosen, resolve, choose, permission,
-    openMic, openCamera, stop, applySpeaker, canChooseSpeaker,
+    openMic, openCamera, stop, canChooseSpeaker,
     playTestSound, testMic, listenOnce,
     voices, voice, speak, canSpeak, niceVoiceName,
     explain, explainSpeech, cleanLabel
