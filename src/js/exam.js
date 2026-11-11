@@ -766,7 +766,7 @@
     dz.addEventListener('dragleave', () => dz.classList.remove('over'));
     dz.addEventListener('drop', (e) => { e.preventDefault(); dz.classList.remove('over'); takeFile(e.dataTransfer && e.dataTransfer.files[0]); });
     sheet({
-      title: 'Importer un sujet', body, wide: true,
+      title: 'Ajouter mon sujet', body, wide: true,
       onClose: () => { if (st.ctrl) st.ctrl.abort(); },
       actions: [
         { label: 'Annuler', kind: 'ghost' },
@@ -965,7 +965,7 @@
     const solo = mode === 'solo';
     const aiOk = aiReady();
     const needKey = aiOk ? '' : '<span class="pill pill-xs pill-warn ex-needkey">Clé IA requise</span>';
-    const toolBtns = `<button type="button" class="btn btn-quiet" data-act="import">${icon('import')}<span>Importer un sujet</span></button>
+    const toolBtns = `<button type="button" class="btn btn-quiet" data-act="import">${icon('import')}<span>Ajouter mon sujet (PDF, Word, photo, texte)</span></button>
         <button type="button" class="btn btn-quiet${aiOk ? '' : ' is-needkey'}" data-act="gen"${aiOk ? '' : ' aria-disabled="true" title="Demande une clé IA (Réglages)"'}>${icon('globe')}<span>Générer avec l’IA</span>${needKey}</button>`;
     root.innerHTML = `<div class="screen ex ex-chooser${solo ? ' ex-solo-chooser' : ''}">
       ${topbar({ title: solo ? 'Entraînement avec l’IA' : 'Entraînement sur Teams', sub: solo ? '' : 'Jury humain · choisir le sujet', back: '#/' })}
@@ -980,13 +980,13 @@
           <button type="button" class="btn btn-quiet" data-act="quick-jury">${icon('chat')}<span>Questions du jury seulement</span></button>
         </div>
       </section>
-      <div class="section-head ex-pick-head"><h2 class="h2">Choisir le sujet</h2></div>` : `<div class="ex-actions-row ex-pick-row">
+      <div class="section-head ex-pick-head"><h2 class="h2">Choisir le sujet</h2></div>
+      <div class="ex-actions-row ex-pick-row">${toolBtns}</div>` : `<div class="ex-actions-row ex-pick-row">
         <button type="button" class="btn btn-primary btn-lg" data-act="draw">${icon('sparkles')}<span>Tirer un sujet au hasard</span></button>
         ${toolBtns}
       </div>`}
       <div class="ex-chips ex-theme-filter" role="tablist" aria-label="Filtrer par thème" data-b="chips"></div>
       <div class="ex-sgrid" data-b="grid"></div>
-      ${solo ? `<details class="ex-more"><summary>Importer ou générer un sujet</summary><div class="ex-actions-row ex-pick-row">${toolBtns}</div></details>` : ''}
     </div>`;
     const filtered = () => store.subjects().filter((s) => !st.theme || s.theme === st.theme);
     function paint() {

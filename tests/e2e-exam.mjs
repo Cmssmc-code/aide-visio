@@ -637,7 +637,7 @@ await test('élève · jury IA direct (sujet au hasard, sans fenêtre)', async (
   assert(await mp.$('.ex-scard .ex-scard-title[lang="en"]'), 'titre anglais sur les cartes');
   assert(await mp.$('.ex-scard .pill-ok'), 'badge « Fait le JJ/MM »');
   assert(!(await mp.$('.ex-teams-join')), 'écran IA épuré : pas de champ Teams');
-  assert(!(await mp.isVisible('.ex-more [data-act="import"]')), 'Importer replié');
+  assert(await mp.isVisible('.ex-solo-chooser [data-act="import"]'), 'Ajouter mon sujet visible');
   await shot(mp, '32-mobile-eleve-accueil', { both: false, full: true });
   const spoken0 = await mp.evaluate(() => (window.__spoken || []).length);
   await mp.click('[data-act="quick-jury"]');
