@@ -1376,8 +1376,8 @@ registerProcessor('aidevisio-tap', AideVisioTap);
         if (!this.vad) {
           this.vad = new Vad({
             collect: this.engineKind === 'cloud',
-            // Jury : fin de phrase plus tôt, pour lancer l'aide plus vite.
-            hangoverMs: this.role === 'them' ? 600 : 750,
+            // Fin de phrase après 600 ms de silence (avant : 750 ms côté candidat), pour transcrire plus vite.
+            hangoverMs: 600,
             onSpeech: active => this.onSpeech(active),
             onSegment: (samples, segInfo) => { if (this.engine && this.engine.segment) this.engine.segment(samples, segInfo); },
           });

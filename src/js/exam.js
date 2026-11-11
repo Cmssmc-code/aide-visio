@@ -2508,8 +2508,10 @@
         qa.busy = true; qa.busyText = 'Le jury prépare sa question…'; paintQA();
         const ctrl = C.ctrl = new AbortController();
         try {
-          const kinds = ['next', 'deeper', 'news', 'opinion', 'clarify'];
-          const r = await S.examAI.juryQuestion({ subject: s.subject, expose: exposeText(s), interview: arr(s.interview.turns).map((t) => ({ who: t.who, text: t.text })), asked: [...used], kind: kinds[used.size % kinds.length], signal: ctrl.signal });
+          // Question déjà préparée pendant la correction (même nombre de questions posées) : on la reprend.
+          const pre = C.qaPrefetch && C.qaPrefetch.size === used.size ? C.qaPrefetch : null;
+          C.qaPrefetch = null;
+          const r = pre ? await pre.p : await askJuryAI(used, ctrl.signal);
           if (r && r.en) q = { en: str(r.en), fr: str(r.fr) };
         } catch (e) { if (isAbort(e)) { qa.busy = false; return; } if (e && e.code === 'KEY') markKeyRefused(); }
         finally { qa.busy = false; }
@@ -2518,6 +2520,20 @@
       if (!q && p.length) q = { en: p[0].en, fr: p[0].fr };
       if (!q) { const g = GENERIC.next.concat(GENERIC.opinion, GENERIC.news, GENERIC.deeper).find((x) => !used.has(x.en)); q = g || GENERIC.deeper[0]; }
       return askQuestion(q, false);
+    }
+    function askJuryAI(used, signal) {
+      const kinds = ['next', 'deeper', 'news', 'opinion', 'clarify'];
+      return S.examAI.juryQuestion({ subject: s.subject, expose: exposeText(s), interview: arr(s.interview.turns).map((t) => ({ who: t.who, text: t.text })), asked: [...used], kind: kinds[used.size % kinds.length], signal });
+    }
+    // Pendant la correction, le jury prépare déjà sa prochaine question si elle doit venir de l'IA.
+    function prefetchNext() {
+      if (C.qaPrefetch) C.qaPrefetch.ctrl.abort();
+      C.qaPrefetch = null;
+      const used = new Set(arr(s.interview.asked).map((x) => x.en));
+      const left = arr(s.subject.corrige.juryQuestions).filter((x) => x && x.en && !used.has(x.en)).length;
+      if (!(aiOn() && aiHas('juryQuestion') && (!left || (used.size >= 2 && used.size % 2 === 0)))) return;
+      const ctrl = new AbortController();
+      C.qaPrefetch = { size: used.size, ctrl, p: askJuryAI(used, ctrl.signal).catch((e) => { if (e && e.code === 'KEY') markKeyRefused(); return null; }) };
     }
     async function askQuestion(q, again) {
       const qa = C.qa;
@@ -2559,6 +2575,7 @@
       s.interview.asked.push(entry);
       qa.state = 'feedback'; qa.fb = null;
       C.saveNow();
+      prefetchNext();
       if (aiOn() && aiHas('answerFeedback')) {
         qa.busy = true; qa.busyText = 'Correction de votre réponse…'; paintQA();
         const ctrl = C.ctrl = new AbortController();
@@ -2587,6 +2604,7 @@
           steps: SOLO_STEPS, resume: true,
           before: () => {
             if (C.ctrl) C.ctrl.abort();
+            if (C.qaPrefetch) { C.qaPrefetch.ctrl.abort(); C.qaPrefetch = null; }
             stopSpeak();
             const t = stopRec();
             if (t && s.phase === 'expose' && s.expose.startedAt && !s.expose.endedAt) exposeOnText(t);

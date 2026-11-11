@@ -547,7 +547,7 @@
       'Return ONLY JSON: {"en": "the question in English", "fr": "traduction française", "why": "pour le jury, en français : ce que la question vérifie (1 phrase)", "expect": "en français : ce qu\'une bonne réponse B2 contiendrait (1-2 phrases)"}'
     ].filter(Boolean).join('\n');
     try {
-      return await callJson({ purpose: 'answer', system, prompt, maxTokens: 500, temperature: 0.7, timeoutMs: 20000, budgetMs: 40000, signal: o.signal }, (d) => {
+      return await callJson({ purpose: 'fast', system, prompt, maxTokens: 500, temperature: 0.7, timeoutMs: 20000, budgetMs: 40000, signal: o.signal }, (d) => {
         const en = str(pick(d, ['en', 'question', 'q']), 300).replace(/^["“«\s]+|["”»\s]+$/g, '');
         if (en.length < 8 || wasAsked(en, asked)) return null;
         return { en, fr: str(d.fr, 400), why: str(d.why, 300), expect: str(pick(d, ['expect', 'expected', 'goodAnswer']), 500), source: 'ai' };
@@ -575,7 +575,7 @@
       'Score the answer out of 10 at B2 level (relevance to the question, development and examples, interaction quality, language). 5 = understandable but short or vague; 7 = relevant, developed, few errors; 9-10 = excellent.',
       'Return ONLY JSON: {"score": 0-10, "good": ["point fort, en français"], "fixes": [{"said": "exact words", "better": "correction", "rule": "règle en français"}], "better": "model B2 answer in English, 3-4 sentences, short and easy to say aloud, reusing the candidate\'s ideas"}'
     ].join('\n');
-    return callJson({ purpose: 'answer', system, prompt, maxTokens: 900, temperature: 0.3, timeoutMs: 30000, budgetMs: 60000, signal: o.signal }, (d) => {
+    return callJson({ purpose: 'fast', system, prompt, maxTokens: 900, temperature: 0.3, timeoutMs: 30000, budgetMs: 60000, signal: o.signal }, (d) => {
       const better = str(pick(d, ['better', 'model', 'modelAnswer']), 1500);
       const good = list(pick(d, ['good', 'strengths']), 4, 300);
       const fixes = normErrors(pick(d, ['fixes', 'errors', 'corrections']), 8);
