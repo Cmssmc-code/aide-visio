@@ -173,6 +173,8 @@
     };
   }
 
+  // Empreinte d'un sujet (titre + début du texte) pour repérer un article importé plusieurs fois.
+  const sameText = (s) => 'txt:' + norm(str(s.title)) + '|' + norm(arr(s.paragraphs).join(' ')).slice(0, 300);
   function normSubject(x) {
     if (!x || typeof x !== 'object') return null;
     const s = Object.assign({}, x);
@@ -274,8 +276,9 @@
       const out = [];
       arr(S.examSubjects).concat(load().customSubjects).forEach((x) => {
         const s = normSubject(x);
-        if (!s || seen.has(s.id) || !s.paragraphs.length) return;
+        if (!s || !s.paragraphs.length || seen.has(s.id) || seen.has(sameText(s))) return;
         seen.add(s.id);
+        seen.add(sameText(s));
         out.push(s);
       });
       return out;
@@ -293,12 +296,20 @@
       s.custom = true;
       s.addedAt = s.addedAt || nowIso();
       const d = load();
-      d.customSubjects = d.customSubjects.filter((x) => x && x.id !== s.id);
+      // Le même article importé de nouveau remplace l'ancien au lieu de créer un doublon.
+      d.customSubjects = d.customSubjects.filter((x) => x && x.id !== s.id && sameText(normSubject(x) || {}) !== sameText(s));
       d.customSubjects.unshift(s);
       persist(d);
       return s;
     },
-    removeSubject(id) { const d = load(); d.customSubjects = d.customSubjects.filter((x) => x && x.id !== id); persist(d); }
+    removeSubject(id) {
+      const d = load();
+      const gone = d.customSubjects.find((x) => x && x.id === id);
+      const key = gone && sameText(normSubject(gone) || {});
+      // Les copies cachées du même article partent avec lui.
+      d.customSubjects = d.customSubjects.filter((x) => x && x.id !== id && (!key || sameText(normSubject(x) || {}) !== key));
+      persist(d);
+    },
   };
   S.examStore = store;
 
