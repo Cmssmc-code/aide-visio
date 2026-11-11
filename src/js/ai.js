@@ -10,11 +10,12 @@
   const PROVIDERS = ['openai', 'gemini', 'claude', 'groq'];
   const LABEL = { openai: 'OpenAI', gemini: 'Gemini', claude: 'Claude', groq: 'Groq' };
 
-  // Modèles (nov. 2026) : les plus rapides d'abord. La découverte (/models) remplace ces listes
+  // Modèles (nov. 2026) : les plus rapides d'abord. Mesuré le 11/11/2026 (réponse du jury, sans raisonnement) :
+  // gpt-5.4-mini 1 s, gpt-5.6-luna et gpt-6-sol 1,5 s, gpt-6-luna 4,5 à 7 s (trop lent pour l'oral). La découverte (/models) remplace ces listes
   // par ce que la clé voit réellement ; ces listes ne servent qu'avant la 1re découverte.
-  const OPENAI_PREF = ['gpt-6-luna', 'gpt-5.4-mini', 'gpt-5.6-luna', 'gpt-5.4-nano', 'gpt-5.5', 'gpt-5-mini', 'gpt-5-nano'];
+  const OPENAI_PREF = ['gpt-5.4-mini', 'gpt-5.6-luna', 'gpt-6-sol', 'gpt-5.4-nano', 'gpt-6-luna', 'gpt-5.5', 'gpt-5-mini', 'gpt-5-nano'];
   const FALLBACK = {
-    openai: ['gpt-6-luna', 'gpt-5.4-mini', 'gpt-5.4-nano'],
+    openai: ['gpt-5.4-mini', 'gpt-5.6-luna', 'gpt-5.4-nano'],
     gemini: ['gemini-3.6-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash',
       'gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite'],
     claude: ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-haiku-4-5', 'claude-sonnet-4-5'],
@@ -313,8 +314,9 @@
     if (!tier) return null;
     const preview = /preview/.test(rest);
     const dated = /\d{2}-\d{2,4}|-\d{3}$/.test(rest);
-    // Mesuré le 09/11/2026 avec la clé de Corentin : gemini-3.8-flash et les alias -latest ne répondent pas (> 40 s).
-    const hangs = /^gemini-3\.8-flash$|-latest$/.test(id);
+    // Mesuré avec la clé de Corentin : gemini-3.8-flash (09/11/2026), gemini-3.7-flash (11/11/2026) et les alias
+    // -latest ne répondent pas (> 25 s).
+    const hangs = /^gemini-3\.[78]-flash$|-latest$/.test(id);
     return { id, ver, tier, score: ver * 100 - (preview ? 2 : 0) - (dated ? 1 : 0) - (hangs ? 1000 : 0) };
   }
 
@@ -484,12 +486,12 @@
     return o.ignoreBreaker ? list : order(list);
   }
 
-  // Réflexion Gemini : 'minimal' (Flash / Flash-Lite) pour l'aide en direct et les tâches rapides,
-  // 'low' sinon. Pro n'accepte pas 'minimal'.
+  // Réflexion Gemini : 'minimal' (Flash / Flash-Lite) partout sauf la préparation du corrigé ('low').
+  // Mesuré le 11/11/2026 : gemini-3.6-flash répond en 0,8 s en 'minimal', 3,6 s en 'low'. Pro n'accepte pas 'minimal'.
   function thinkingFor(model, purpose) {
     const m = String(model || '');
     if (/^gemini-([3-9]|\d{2,})/.test(m)) {
-      return { thinkingLevel: (purpose === 'live' || purpose === 'fast') && !/pro/.test(m) ? 'minimal' : 'low' };
+      return { thinkingLevel: purpose !== 'prep' && !/pro/.test(m) ? 'minimal' : 'low' };
     }
     if (/2\.5/.test(m)) return /pro/.test(m) ? { thinkingBudget: 128 } : { thinkingBudget: 0 };
     return null;
@@ -909,7 +911,7 @@
         if (!e || e.code !== 'BAD_REQUEST' || e.partialText) throw e;
         const d = String(e.detail || '');
         if (!v.maxTokens && /max_?(?:output_?)?tokens|maxOutputTokens/i.test(d) && (o.maxTokens || 0) > 8192) { v.maxTokens = 8192; continue; }
-        if (c.provider === 'gemini' && v.thinking && !v.thinkLevel && /minimal|thinking/i.test(d)) {
+        if (c.provider === 'gemini' && v.thinking && !v.thinkLevel && /minimal/i.test(d)) {
           const th = thinkingFor(c.model, o.purpose);
           if (th && th.thinkingLevel === 'minimal') { v.thinkLevel = 'low'; noMinimal.add(c.model); continue; }
         }

@@ -157,7 +157,8 @@ test('pick : ordre de repli (Gemini puis Claude), réglage fournisseur, sans cl�
   const noKey = makeEnv({});
   assert.equal(noKey.ai.hasKey(), false);
   assert.ok(noKey.ai.pick('answer').length > 0);
-  assert.deepEqual(JSON.parse(JSON.stringify(ai.thinkingFor('gemini-3-flash-preview'))), { thinkingLevel: 'low' });
+  assert.deepEqual(JSON.parse(JSON.stringify(ai.thinkingFor('gemini-3-flash-preview'))), { thinkingLevel: 'minimal' });
+  assert.deepEqual(JSON.parse(JSON.stringify(ai.thinkingFor('gemini-3.6-flash', 'prep'))), { thinkingLevel: 'low' }, 'corrigé : low');
   assert.deepEqual(JSON.parse(JSON.stringify(ai.thinkingFor('gemini-3.5-flash-lite', 'live'))), { thinkingLevel: 'minimal' });
   assert.deepEqual(JSON.parse(JSON.stringify(ai.thinkingFor('gemini-3.1-pro', 'fast'))), { thinkingLevel: 'low' }, 'Pro : jamais minimal');
   assert.deepEqual(JSON.parse(JSON.stringify(ai.thinkingFor('gemini-2.5-flash'))), { thinkingBudget: 0 });
@@ -223,7 +224,7 @@ test('generate : streaming SSE Gemini (paquets coupés, UTF-8 coupé, pensées i
   assert.ok(c.url.endsWith('/models/gemini-3.6-flash:streamGenerateContent?alt=sse'));
   assert.equal(c.headers['x-goog-api-key'], 'g-key');
   assert.equal(c.body.systemInstruction.parts[0].text, 'SYS');
-  assert.equal(c.body.generationConfig.thinkingConfig.thinkingLevel, 'low');
+  assert.equal(c.body.generationConfig.thinkingConfig.thinkingLevel, 'minimal');
   assert.equal(c.body.contents[c.body.contents.length - 1].parts.at(-1).text, 'Q');
   const ok = env.events.filter(e => e.type === 'ai:status');
   assert.equal(ok.length, 1);
@@ -317,18 +318,18 @@ test('Groq : gros modèles seulement, flux SSE OpenAI, Whisper prioritaire pour 
   assert.equal(t.text, 'Pourquoi le Recho ?');
 });
 
-test('OpenAI : prioritaire en auto, gpt-6-luna sans raisonnement, Claude en secours sur 429', async () => {
+test('OpenAI : prioritaire en auto, gpt-5.4-mini sans raisonnement, Claude en secours sur 429', async () => {
   const isOpenai = c => c.url.startsWith('https://api.openai.com/');
   const env = makeEnv({ openaiKey: 'sk-proj-test', claudeKey: 'c-key' });
   const picked = env.ai.pick('answer');
   assert.equal(picked[0].provider, 'openai', 'OpenAI en tête : ' + JSON.stringify(picked[0]));
-  assert.equal(picked[0].model, 'gpt-6-luna');
+  assert.equal(picked[0].model, 'gpt-5.4-mini');
   const chunk = t => 'data: ' + JSON.stringify({ choices: [{ index: 0, delta: { content: t } }] }) + '\n\n';
   env.handler = () => bytesResponse(chunk('**Je veux ') + chunk('rejoindre BDO.**') + 'data: [DONE]\n\n');
   const deltas = [];
   const r = await env.ai.generate({ prompt: 'Q', system: 'S', stream: true, temperature: 0.4, maxTokens: 700, onDelta: t => deltas.push(t) });
   assert.equal(r.provider, 'openai');
-  assert.equal(r.model, 'gpt-6-luna');
+  assert.equal(r.model, 'gpt-5.4-mini');
   assert.equal(r.text, '**Je veux rejoindre BDO.**');
   const call = env.calls.find(isOpenai);
   assert.ok(call.url.endsWith('/v1/chat/completions'));
@@ -355,7 +356,7 @@ test('réponse tronquée (MAX_TOKENS) → relance avec un budget plus grand, tex
     return bytesResponse(gEvent('**Je suis gestionnaire financier et ancien responsable de restaurant.**\n') + gEvent('- **Budget** : révision annuelle.', { finishReason: 'STOP' }));
   };
   const deltas = [];
-  const r = await env.ai.generate({ prompt: 'Q', stream: true, maxTokens: 900, onDelta: t => deltas.push(t) });
+  const r = await env.ai.generate({ purpose: 'prep', prompt: 'Q', stream: true, maxTokens: 900, onDelta: t => deltas.push(t) });
   assert.equal(r.text, '**Je suis gestionnaire financier et ancien responsable de restaurant.**\n- **Budget** : révision annuelle.');
   assert.equal(r.truncated, false);
   assert.equal(env.calls.length, 2, 'une relance');
