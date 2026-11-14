@@ -45,6 +45,8 @@ import time
 from collections import deque
 from pathlib import Path
 
+# Un seul fil pour le calcul de numpy (OpenBLAS) : sinon ~350 Mo réservés d'avance pour 12 fils, jamais utilisés.
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 import numpy as np
 import pyaudiowpatch as pa
 import websockets
@@ -53,6 +55,8 @@ PORT = int(os.environ.get("AIDE_VISIO_SON_PC_PORT", "47800"))
 MODEL_PREF = os.environ.get("AIDE_VISIO_MODELE", "auto").strip().lower()
 ORIGINS = ("https://cmssmc-code.github.io", "http://localhost", "http://127.0.0.1")
 FRAME_MS = 20
+# Whisper libéré après 10 min sans oral ouvert (rechargé en ~5 s à la prochaine connexion de la page).
+UNLOAD_S = 600
 SR = 16000
 VAD_FRAME = 512
 
@@ -409,7 +413,8 @@ class Transcriber:
         self.me_q = deque()
         self.me_cv = threading.Condition()
         self.me_busy = 0
-        threading.Thread(target=self._load, name="modeles", daemon=True).start()
+        self.loading = False
+        self.load()
         threading.Thread(target=self._run, name="whisper", daemon=True).start()
         threading.Thread(target=self._run_live, name="whisper-direct", daemon=True).start()
         threading.Thread(target=self._run_me, name="whisper-micro", daemon=True).start()
@@ -423,7 +428,33 @@ class Transcriber:
         log.info("modèle %s chargé en %.1f s", name, time.time() - t)
         return m
 
+    def load(self):
+        """Charge Whisper en arrière-plan s'il ne l'est pas déjà (client connecté, ou après ``unload``)."""
+        with self.cv:
+            if self.models or self.loading:
+                return
+            self.loading = True
+            self.failed = None
+        threading.Thread(target=self._load, name="modeles", daemon=True).start()
+
+    def unload(self):
+        """Libère Whisper (~1 Go) quand aucun oral n'est ouvert ; ``load`` le recharge en quelques secondes."""
+        with self.cv:
+            if self.loading or not self.models:
+                return
+            self.models = {}
+            self.live_model = None
+        import gc
+        gc.collect()
+        log.info("modèle Whisper libéré (aucun oral depuis %d min)", UNLOAD_S // 60)
+
     def _load(self):
+        try:
+            self._load_models()
+        finally:
+            self.loading = False
+
+    def _load_models(self):
         first = MODEL_PREF if MODEL_PREF in ("base", "small", "tiny", "medium") else "base"
         try:
             m = self._model(first)
@@ -1089,6 +1120,7 @@ class Hub:
         self.engine = None
         self.loop = None
         self.close_timer = None
+        self.unload_timer = None
         self.boost = Boost()
 
     def broadcast(self, msg):
@@ -1105,6 +1137,7 @@ class Hub:
     async def transcription(self, ws, origin):
         if self.engine is None:
             self.engine = Engine(self.broadcast)
+        self.engine.tr.load()
         self.clients.add(ws)
         log.info("transcription : client %s (%d)", origin, len(self.clients))
         try:
@@ -1157,14 +1190,18 @@ class Hub:
                 self.engine.paused = True
                 self.engine.tr.clear()
                 self.cancel_close()
-                self.close_timer = asyncio.get_running_loop().call_later(
+                loop = asyncio.get_running_loop()
+                self.close_timer = loop.call_later(
                     20, lambda: None if self.started else self.engine.close_captures())
+                self.unload_timer = loop.call_later(
+                    UNLOAD_S, lambda: None if self.started else self.engine.tr.unload())
                 self.boost.stop()
 
     def cancel_close(self):
-        if self.close_timer is not None:
-            self.close_timer.cancel()
-            self.close_timer = None
+        for t in (self.close_timer, self.unload_timer):
+            if t is not None:
+                t.cancel()
+        self.close_timer = self.unload_timer = None
 
 
 hub = Hub()
@@ -1224,10 +1261,9 @@ async def main():
     async with websockets.serve(handler, "127.0.0.1", PORT, max_size=2 ** 16, ping_interval=20):
         log.info("à l'écoute sur ws://127.0.0.1:%d (/transcription, /son) · modèle %s", PORT, MODEL_PREF)
         print(f"Son du PC Aide Visio : ws://127.0.0.1:{PORT} (journal : {LOG_DIR / 'son-pc.log'})", flush=True)
-        # Modèle chargé dès le lancement (15 s à 3 min à froid) : l'oral démarre sans attendre.
-        # Aucune capture n'est ouverte avant « start ».
-        if hub.engine is None:
-            hub.engine = Engine(hub.broadcast)
+        # Rien n'est chargé au lancement (programme au repos : ~60 Mo au lieu de ~1,8 Go) : Whisper se charge à
+        # la première connexion de la page (sonde de la mise en place, ~5 s, avant « start »), puis est libéré
+        # après UNLOAD_S sans oral. Aucune capture n'est ouverte avant « start ».
         await asyncio.Future()
 
 
