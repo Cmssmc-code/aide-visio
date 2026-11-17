@@ -563,7 +563,7 @@ await test('historique : lignes, ouverture, suppression, anciennes séances igno
   assert(await page.$eval('#tabbar [data-tab="historique"]', (a) => a.classList.contains('on')), 'onglet Historique actif');
   const rows = await page.$$eval('.ex-hrow', (n) => n.map((r) => r.textContent.replace(/\s+/g, ' ').trim()));
   assert(rows.length === 2, 'deux lignes (anciens types masqués) : ' + JSON.stringify(rows));
-  assert(/Contrôleur de gestion/.test(rows[0]) && /mots de dossier/.test(rows[0]) && /En cours/.test(rows[0]), 'ligne 1 : ' + rows[0]);
+  assert(/Contrôleur de gestion/.test(rows[0]) && /mots de dossier/.test(rows[0]) && /Prêt/.test(rows[0]), 'ligne 1 : ' + rows[0]);
   assert(/Assistant comptable/.test(rows[1]) && /sans dossier/.test(rows[1]) && /Terminé/.test(rows[1]), 'ligne 2 : ' + rows[1]);
   assert(!/anglais|jury/i.test(await page.textContent('.ex-history')), 'rien des anciennes séances');
   assert(/2 entretiens/.test(await page.textContent('.ex-tb-title small')), 'compteur');
