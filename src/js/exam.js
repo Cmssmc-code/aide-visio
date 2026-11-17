@@ -155,6 +155,7 @@
   // (les plus fréquents d'abord), pour qu'ils soient bien écrits.
   const HINT_MAX = 250; // le paramètre prompt de Whisper est limité à 224 jetons
   const TITLE_STOP = new Set(['de', 'des', 'du', 'les', 'la', 'le', 'pour', 'chez', 'et', 'en', 'au', 'aux', 'sur', 'un', 'une']);
+  const HINT_STOP = new Set('toujours jamais depuis pendant puisque lorsque plusieurs chaque quelques quelque comment pourquoi réponse réponses question questions exemple exemples entretien dossier préparation savoir pouvoir devoir mettre prendre donner parler mention mentionner situation action résultat ensuite encore également notamment vraiment plutôt surtout autres aucune aucun toutes premier première dernier dernière années semaine semaines'.split(' '));
   function jobHint(s) {
     const seen = new Set(), out = [];
     let len = 0;
@@ -167,6 +168,10 @@
     if (title !== NO_TITLE) title.split(/[^0-9A-Za-zÀ-ÿ&'’-]+/).filter((w) => w.length > 2 && !TITLE_STOP.has(w.toLowerCase())).forEach(add);
     const text = str(s.job && s.job.text);
     const lower = new Set(text.match(/(?<![0-9A-Za-zÀ-ÿ])[a-zà-ÿ][a-zà-ÿ'’-]{2,}/g) || []);
+    // Les mots du métier les plus répétés (« bailleurs », « audits ») : sans eux, la transcription, nourrie de noms propres, entend des noms (« Bayers », « Audis »).
+    const common = new Map();
+    for (const w of text.toLowerCase().match(/(?<![0-9a-zà-ÿ'’])[a-zà-ÿ]{6,}(?![a-zà-ÿ'’])/g) || []) if (!HINT_STOP.has(w)) common.set(w, (common.get(w) || 0) + 1);
+    Array.from(common.entries()).filter((e) => e[1] >= 4).sort((a, b) => b[1] - a[1]).slice(0, 8).forEach((e) => add(e[0]));
     const count = new Map();
     // Un mot à majuscule en début de phrase ou de ligne (« Responsable », « Objectifs ») ne prouve rien : seuls ses autres emplois comptent. Les sigles comptent toujours.
     const START = /(?:^|[.!?…]\s+|\n\s*(?:[-–—*•·#>]|\d+[.)])?\s*)$/;
