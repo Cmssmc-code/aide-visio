@@ -147,7 +147,7 @@
   const sessionHash = (s) => '#/entretien/' + s.id;
   function callCountLabel(s) {
     const n = arr(s.call && s.call.answers).filter((a) => !a.skipped).length;
-    return n ? `${n} question${n > 1 ? 's' : ''}` : s.call && s.call.endedAt ? 'Terminé' : 'En cours';
+    return n ? `${n} question${n > 1 ? 's' : ''}` : s.call && s.call.endedAt ? 'Terminé' : s.call && s.call.startedAt ? 'En cours' : 'Prêt';
   }
   const isOpen = (s) => !!(s.call && s.call.startedAt && !s.call.endedAt);
 
