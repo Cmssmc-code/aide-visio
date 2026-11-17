@@ -549,6 +549,42 @@ test('transcribe : WAV inline, Gemini uniquement (fast), filtre d\'hallucination
   assert.equal(ai.cleanTranscript(loop), 'Je travaille sur le budget. Et vous ?');
 });
 
+test('cleanTranscript : « merci d’avoir écouté » filtré, « au revoir » et « à bientôt » gardés', async () => {
+  const ai = makeEnv({ geminiKey: 'g-key' }).ai;
+  assert.equal(ai.cleanTranscript('Merci d’avoir écouté.'), '');
+  assert.equal(ai.cleanTranscript('Merci d\'avoir écouté cette vidéo !'), '');
+  assert.equal(ai.cleanTranscript('Au revoir.'), 'Au revoir.');
+  assert.equal(ai.cleanTranscript('À bientôt.'), 'À bientôt.');
+});
+
+test('Groq 413 « tokens per minute » → QUOTA minute, pause 10 min, le fournisseur suivant passe directement', async () => {
+  const isGroq = c => c.url.startsWith('https://api.groq.com/');
+  const env = makeEnv({ groqKey: 'gsk-test', claudeKey: 'c-key' });
+  env.handler = (c) => isGroq(c)
+    ? json({ error: { message: 'Request too large for model on tokens per minute (TPM): Limit 8000, Requested 12000', type: 'tokens', code: 'rate_limit_exceeded' } }, 413)
+    : cJson('Réponse Claude');
+  const r = await env.ai.generate({ prompt: 'Q', model: 'groq:openai/gpt-oss-120b' });
+  assert.equal(env.calls[0].url.startsWith('https://api.groq.com/'), true, 'Groq tenté en premier');
+  assert.equal(r.provider, 'claude');
+  const groqFirst = env.calls.filter(isGroq).length;
+  assert.ok(groqFirst >= 1);
+  const st = env.events.filter(e => e.type === 'ai:status' && e.ok === false && e.provider === 'groq');
+  assert.ok(st.length >= 1 && st.every(e => e.code === 'QUOTA'), 'classé QUOTA : ' + JSON.stringify(st.map(e => e.code)));
+  const br = env.ai.state().breaker.filter(b => /groq|gpt-oss|llama|qwen|kimi/i.test(b.model) || b.provider === 'groq');
+  assert.ok(br.length >= 1, 'disjoncteur posé sur Groq');
+  env.calls.length = 0;
+  await env.ai.generate({ prompt: 'Q2' });
+  assert.equal(env.calls.filter(isGroq).length, 0, 'Groq n’est plus retenté pendant la pause');
+});
+
+test('Groq 413 sans mention de quota par minute → reste BAD_REQUEST', async () => {
+  const isGroq = c => c.url.startsWith('https://api.groq.com/');
+  const env = makeEnv({ groqKey: 'gsk-test' });
+  env.handler = (c) => json({ error: { message: 'Payload too large', type: 'invalid_request_error' } }, 413);
+  await assert.rejects(env.ai.generate({ prompt: 'Q' }), e => e.code !== 'QUOTA');
+  assert.ok(env.events.filter(e => e.type === 'ai:status' && e.ok === false).every(e => e.code === 'BAD_REQUEST'));
+});
+
 test('extractFile : PDF inline → repli Claude (bloc document) si Gemini en panne ; test()', async () => {
   const env = makeEnv({ geminiKey: 'g-key', claudeKey: 'c-key' });
   env.handler = (c) => isGemini(c) ? err(503, 'overloaded') : claudeSSE(['Fiche de poste\n', '- Missions']);

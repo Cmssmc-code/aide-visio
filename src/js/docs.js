@@ -1117,7 +1117,7 @@
     throw fail('UNSUPPORTED', 'Archive ZIP : décompressez-la puis déposez les documents un par un.');
   }
 
-  // En-têtes et pieds de page répétés (mentions, nom de l'élève, numéros) : retirés de chaque page.
+  // En-têtes et pieds de page répétés (mentions, nom de la personne, numéros) : retirés de chaque page.
   function stripRepeated(pages) {
     const norm = (l) => l.toLowerCase().replace(/\d+/g, '#').replace(/\s+/g, ' ').trim();
     const seen = new Map();

@@ -10,8 +10,8 @@
   const PROVIDERS = ['openai', 'gemini', 'claude', 'groq'];
   const LABEL = { openai: 'OpenAI', gemini: 'Gemini', claude: 'Claude', groq: 'Groq' };
 
-  // Modèles (nov. 2026) : les plus rapides d'abord. Mesuré le 11/11/2026 (réponse du jury, sans raisonnement) :
-  // gpt-5.4-mini 1 s, gpt-5.6-luna et gpt-6-sol 1,5 s, gpt-6-luna 4,5 à 7 s (trop lent pour l'oral). La découverte (/models) remplace ces listes
+  // Modèles (nov. 2026) : les plus rapides d'abord. Mesuré le 11/11/2026 (réponse en direct, sans raisonnement) :
+  // gpt-5.4-mini 1 s, gpt-5.6-luna et gpt-6-sol 1,5 s, gpt-6-luna 4,5 à 7 s (trop lent en direct). La découverte (/models) remplace ces listes
   // par ce que la clé voit réellement ; ces listes ne servent qu'avant la 1re découverte.
   const OPENAI_PREF = ['gpt-5.4-mini', 'gpt-5.6-luna', 'gpt-6-sol', 'gpt-5.4-nano', 'gpt-6-luna', 'gpt-5.5', 'gpt-5-mini', 'gpt-5-nano'];
   const FALLBACK = {
@@ -165,12 +165,15 @@
     const credit = /insufficient_quota|credit balance|exceeded your current quota|billing_hard_limit|payment required/i.test(raw) || status === 402;
     const keySignal = !credit && /API_KEY_INVALID|API key not valid|API key expired|api[_ -]?key|x-api-key|leaked|has not been used|SERVICE_DISABLED|CONSUMER_INVALID|authentication_error|billing/i.test(raw);
     const keyBad = !credit && (status === 401 || status === 403 || (status === 400 && keySignal));
+    // Groq : 413 « Request too large … tokens per minute (TPM) » = le prompt dépasse le quota par minute.
+    const tooBigForMinute = !credit && status === 413 && /tokens per min|TPM|rate_limit/i.test(raw);
     let code;
     let kind = '';
     if (keyBad) code = 'KEY';
-    else if (status === 429 || credit) {
+    else if (status === 429 || credit || tooBigForMinute) {
       code = 'QUOTA';
       if (credit) kind = 'credit';
+      else if (tooBigForMinute) kind = 'minute';
       else if (/PerMinute|per[ _-]minute|PerSecond|requests per min|tokens per min|\bRPM\b|\bTPM\b|rate_limit/i.test(raw) && !/PerDay|per[ _-]day|\bRPD\b|\bTPD\b/i.test(raw)) kind = 'minute';
     }
     else if (status === 404) code = 'NOT_FOUND';
@@ -178,7 +181,7 @@
     else if (status === 400 || status === 413 || status === 422) code = 'BAD_REQUEST';
     else code = 'HTTP';
     const extra = { status, provider, model, keyStrong: status === 401 || keySignal, detail: String(detail || raw).slice(0, 500) };
-    if (code === 'QUOTA') { extra.retryAfterMs = parseRetryAfter(parsed, retryHeader); extra.quotaKind = kind || 'day'; }
+    if (code === 'QUOTA') { extra.retryAfterMs = parseRetryAfter(parsed, retryHeader); if (tooBigForMinute) extra.retryAfterMs = Math.max(extra.retryAfterMs, 600000); extra.quotaKind = kind || 'day'; }
     return aiError(code, frMessage(code, provider, status, detail, kind), extra);
   }
 
@@ -823,7 +826,7 @@
         const fd = new FormData();
         fd.append('file', wavBlob, 'segment.wav');
         fd.append('model', model);
-        fd.append('language', lang || 'en');
+        fd.append('language', lang || 'fr');
         fd.append('response_format', 'json');
         fd.append('temperature', '0');
         if (hint) fd.append('prompt', hint.slice(0, 600));
@@ -1253,13 +1256,14 @@
 
   const HALLUCINATIONS = [
     /(?:(?:sous-?titr|subtitl|caption)[^.\n]*?)?(?:la communauté d'|the )?amara\.org\b[^.\n]*\.?/gi,
-    // Whisper en anglais (langue par défaut) invente aussi ces phrases de fin de vidéo.
+    // En anglais, Whisper invente aussi ces phrases de fin de vidéo.
     /(?:subtitles?|captions?)\s+(?:by|from)\b[^.\n]*\.?/gi,
     /thanks? (?:you )?(?:so much )?for watching[^.!\n]*[.!]?/gi,
     /(?:please (?:like and )?subscribe|like and subscribe|subscribe to (?:the|my|our) channel)[^.!\n]*[.!]?/gi,
     /sous-?titr(?:es|age)\s+(?:réalisés?\s+)?(?:par|de)\b[^.\n]*\.?/gi,
     /sous-?titrage\s+(?:st'?\s*\d+|société radio-canada|fr\b)[^.\n]*\.?/gi,
     /merci d'avoir regardé(?: cette vidéo)?\s*[.!]?/gi,
+    /merci d['’]avoir écouté(?: cette vidéo)?\s*[.!]?/gi,
     /n'oubliez pas de (?:vous abonner|liker|mettre un like)[^.!\n]*[.!]?/gi,
     /abonnez-vous(?: à la chaîne)?\s*[.!]?/gi,
     /transcription (?:réalisée|faite) par[^.\n]*\.?/gi,
@@ -1307,7 +1311,7 @@
   async function transcribe(wavBlob, opts) {
     opts = opts || {};
     const hint = String(opts.hint || opts.prompt || '').replace(/\s+/g, ' ').trim().slice(0, 500);
-    const lang = String(opts.lang || 'en').slice(0, 2).toLowerCase();
+    const lang = String(opts.lang || 'fr').slice(0, 2).toLowerCase();
     if (keyOf('groq') && !(groqKeyDead() && keyOf('gemini') && !opts.peek)) {
       try {
         const w = await groqWhisper(wavBlob, hint, opts.signal, opts.timeoutMs, lang);
@@ -1322,7 +1326,7 @@
     const data = await blobToBase64(wavBlob);
     const mime = (wavBlob && wavBlob.type) || 'audio/wav';
     const prompt = [
-      'Transcris mot à mot, en ' + (lang === 'fr' ? 'français' : 'anglais') + ', ce qui est dit dans cet extrait audio (oral d\'anglais des affaires).',
+      'Transcris mot à mot, en ' + (lang === 'fr' ? 'français' : 'anglais') + ', ce qui est dit dans cet extrait audio' + '.',
       '- Écris uniquement les paroles prononcées : pas de commentaire, pas d\'horodatage, pas de nom de locuteur, pas de description de sons.',
       '- Ne traduis pas, ne résume pas, ne complète pas les phrases coupées.',
       '- S\'il n\'y a aucune parole intelligible (silence, musique, bruit), réponds exactement : [vide]'
@@ -1390,7 +1394,7 @@
 
   // Réchauffage : ouvre à l'avance la connexion (DNS + TLS) vers le fournisseur qui répondra,
   // pour gagner 100 à 300 ms sur la 1re réponse. À appeler quand l'aide en direct démarre
-  // ou dès que le jury commence à parler. Sans effet hors navigateur ou sans clé.
+  // ou dès que le recruteur commence à parler. Sans effet hors navigateur ou sans clé.
   const ORIGIN = { openai: 'https://api.openai.com', gemini: 'https://generativelanguage.googleapis.com', claude: 'https://api.anthropic.com', groq: 'https://api.groq.com' };
   const warmedAt = {};
   function warm(purpose, opts) {

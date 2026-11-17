@@ -1,17 +1,17 @@
 (function (S) {
   'use strict';
 
-  // Appareils du PC : micro, haut-parleur, caméra, voix anglaise.
+  // Appareils du PC : micro, haut-parleur, caméra.
   // Les choix sont gardés dans les réglages (aidevisio.settings) :
   //   micDeviceId / micLabel, speakerDeviceId / speakerLabel,
-  //   cameraDeviceId / cameraLabel, voiceURI / voiceName.
+  //   cameraDeviceId / cameraLabel.
   // '' = appareil par défaut de Windows.
 
   const nav = navigator;
   const md = () => nav.mediaDevices || null;
   const KIND = { mic: 'audioinput', speaker: 'audiooutput', camera: 'videoinput' };
-  const ID = { mic: 'micDeviceId', speaker: 'speakerDeviceId', camera: 'cameraDeviceId', voice: 'voiceURI' };
-  const LABEL = { mic: 'micLabel', speaker: 'speakerLabel', camera: 'cameraLabel', voice: 'voiceName' };
+  const ID = { mic: 'micDeviceId', speaker: 'speakerDeviceId', camera: 'cameraDeviceId' };
+  const LABEL = { mic: 'micLabel', speaker: 'speakerLabel', camera: 'cameraLabel' };
   const FALLBACK = { mic: 'Micro', speaker: 'Haut-parleur', camera: 'Caméra' };
 
   function settings() {
@@ -156,8 +156,8 @@
     return chimeUrl;
   }
 
-  // Joue deux fois un petit carillon sur la sortie par défaut de Windows : c'est celle de la voix du jury
-  // (la synthèse vocale du navigateur ne peut pas être envoyée ailleurs).
+  // Joue deux fois un petit carillon sur la sortie par défaut de Windows : c'est celle du son de l'appel
+  // (le navigateur ne peut pas l'envoyer ailleurs).
   async function playTestSound() {
     const a = new Audio(chime());
     a.volume = 1;
@@ -166,87 +166,6 @@
       await a.play();
       await new Promise((r) => { const done = () => { a.removeEventListener('ended', done); r(); }; a.addEventListener('ended', done); setTimeout(done, 1500); });
     }
-    return { sink: id };
-  }
-
-  // ---------- Voix anglaise ----------
-
-  let voicesP = null;
-  function allVoices() {
-    if (voicesP) return voicesP;
-    voicesP = new Promise((res) => {
-      const sy = window.speechSynthesis;
-      if (!sy) { res([]); return; }
-      const v = sy.getVoices();
-      if (v && v.length) { res(v); return; }
-      let done = false;
-      const fin = () => { if (done) return; done = true; res(sy.getVoices() || []); };
-      try { sy.addEventListener('voiceschanged', fin, { once: true }); } catch (e) { sy.onvoiceschanged = fin; }
-      setTimeout(fin, 2000);
-    }).then((v) => { if (!v.length) voicesP = null; return v; });
-    return voicesP;
-  }
-  try { if (window.speechSynthesis) window.speechSynthesis.addEventListener('voiceschanged', () => { voicesP = null; }); } catch (e) {  }
-
-  function voiceScore(v) {
-    const n = str(v.name);
-    const l = str(v.lang).replace('_', '-');
-    let s = /^en-GB/i.test(l) ? 0 : /^en-US/i.test(l) ? 0.5 : 3;
-    if (/natural|neural/i.test(n)) s -= 2;
-    else if (/^Google/i.test(n)) s -= 1.5;
-    else if (/online/i.test(n)) s -= 1;
-    if (/Hazel|Zira|David|George|Susan|Mark/i.test(n) && !/natural|online/i.test(n)) s += 0.3;
-    return s;
-  }
-
-  function niceVoiceName(v) {
-    const n = str(v.name)
-      .replace(/^Microsoft\s+/i, '')
-      .replace(/\s*-\s*English\s*\((United States|United Kingdom|Great Britain)\)/i, '')
-      .replace(/\s*Online\s*\(Natural\)/i, ' (naturelle)');
-    const l = str(v.lang).replace('_', '-');
-    const accent = /^en-GB/i.test(l) ? 'britannique' : /^en-US/i.test(l) ? 'américaine' : l;
-    return `${n} · ${accent}${v.localService === false ? ' · en ligne' : ''}`;
-  }
-
-  async function voices() {
-    const all = (await allVoices()).filter((v) => /^en[-_]/i.test(v.lang || ''));
-    const main = all.filter((v) => /^en[-_](GB|US)/i.test(v.lang));
-    return (main.length ? main : all).slice().sort((a, b) => voiceScore(a) - voiceScore(b));
-  }
-
-  // Voix choisie (ou la meilleure disponible si aucun choix / voix disparue).
-  async function voice() {
-    const vs = await voices();
-    if (!vs.length) return null;
-    const s = settings();
-    return vs.find((v) => v.voiceURI === s.voiceURI) || vs.find((v) => s.voiceName && v.name === s.voiceName) || vs[0];
-  }
-
-  const canSpeak = () => !!(window.speechSynthesis && window.SpeechSynthesisUtterance);
-
-  // Lit un texte anglais avec la voix choisie. Résout true si la lecture est allée au bout.
-  async function speak(text, o) {
-    o = o || {};
-    if (!text || !canSpeak()) return false;
-    const v = o.voice || await voice();
-    const sy = window.speechSynthesis;
-    try { sy.cancel(); } catch (e) {  }
-    return new Promise((resolveP) => {
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = v ? v.lang : 'en-GB';
-      if (v) u.voice = v;
-      u.rate = o.rate || 1;
-      let done = false;
-      // Chrome coupe les voix « Google » en ligne après ~15 s : petit relais pause/reprise.
-      const keep = v && v.localService === false ? setInterval(() => { try { if (sy.speaking && !sy.paused) { sy.pause(); sy.resume(); } } catch (e) {  } }, 10000) : 0;
-      const fin = (ok, err) => { if (done) return; done = true; clearTimeout(g); clearInterval(keep); if (o.onEnd) o.onEnd(ok, err); resolveP(ok); };
-      const g = setTimeout(() => fin(true), 6000 + text.length * 120 / u.rate);
-      u.onstart = () => { if (o.onStart) o.onStart(); };
-      u.onend = () => fin(true);
-      u.onerror = (e) => fin(false, e && e.error);
-      try { sy.speak(u); } catch (e) { fin(false, 'speak'); }
-    });
   }
 
   // ---------- Messages d'erreur en français simple ----------
@@ -281,60 +200,6 @@
       return { title: `${What} n’est pas accessible dans ce navigateur.`, advice: 'Utilisez Google Chrome à jour.' };
     }
     return { title: `${What} ne répond pas.`, advice: `Rechargez la page puis relancez la vérification.${msg ? ` (${msg.slice(0, 120)})` : ''}` };
-  }
-
-  function explainSpeech(code) {
-    switch (str(code)) {
-      case 'not-allowed':
-      case 'service-not-allowed':
-        return { title: 'Chrome n’a pas le droit d’utiliser le micro pour la dictée.', advice: 'Icône à gauche de l’adresse → Micro → Autoriser, puis relancez.' };
-      case 'no-speech':
-        return { title: 'Rien entendu.', advice: 'Dites « hello » bien fort, près du PC, juste après avoir cliqué.' };
-      case 'audio-capture':
-        return { title: 'La dictée ne trouve pas le micro.', advice: 'La dictée de Chrome utilise le micro par défaut de Windows : Paramètres Windows → Système → Son → Entrée → choisissez votre micro.' };
-      case 'network':
-        return { title: 'Le service de dictée de Google ne répond pas.', advice: 'La dictée a besoin d’internet. Vérifiez le wifi, ou coupez le VPN / pare-feu, puis relancez.' };
-      case 'language-not-supported':
-        return { title: 'Anglais non disponible pour la dictée.', advice: 'Mettez Chrome à jour, puis relancez.' };
-      case 'unsupported':
-        return { title: 'Dictée indisponible dans ce navigateur.', advice: 'Utilisez Google Chrome à jour.' };
-      default:
-        return { title: 'La dictée n’a pas fonctionné.', advice: 'Relancez le test. Si cela recommence, rechargez la page.' };
-    }
-  }
-
-  // Écoute un mot anglais avec la dictée de Chrome. Résout { ok, text, code }.
-  function listenOnce(o) {
-    o = o || {};
-    const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!Ctor) return Promise.resolve({ ok: false, text: '', code: 'unsupported' });
-    return new Promise((res) => {
-      const r = new Ctor();
-      r.lang = o.lang || 'en-US';
-      r.continuous = false;
-      r.interimResults = true;
-      r.maxAlternatives = 3;
-      let text = ''; let code = ''; let done = false;
-      const fin = () => {
-        if (done) return; done = true; clearTimeout(t);
-        try { r.abort(); } catch (e) {  }
-        const tx = text.trim(); const ok = !!tx && (!code || code === 'no-speech');
-        res({ ok, text: tx, code: ok ? '' : (code || 'no-speech') });
-      };
-      const t = setTimeout(fin, o.timeoutMs || 8000);
-      // Annulation par AbortSignal (écran quitté) : libère le micro tout de suite.
-      if (o.signal) { if (o.signal.aborted) { fin(); return; } o.signal.addEventListener('abort', fin, { once: true }); }
-      r.onresult = (e) => {
-        let all = '';
-        for (let i = 0; i < e.results.length; i++) all += e.results[i][0] ? e.results[i][0].transcript : '';
-        text = all;
-        if (o.onText) o.onText(all.trim());
-        if (e.results[e.results.length - 1].isFinal) fin();
-      };
-      r.onerror = (e) => { code = (e && e.error) || 'error'; if (code !== 'no-speech' || !text) fin(); };
-      r.onend = () => fin();
-      try { r.start(); } catch (e) { code = 'error'; fin(); }
-    });
   }
 
   // Niveau du micro en direct : ouvre le micro choisi, appelle onLevel(0..1)
@@ -382,8 +247,7 @@
   S.devices = {
     list, hasLabels, chosen, resolve, choose, permission,
     openMic, openCamera, stop,
-    playTestSound, testMic, listenOnce,
-    voices, voice, speak, canSpeak, niceVoiceName,
-    explain, explainSpeech, cleanLabel
+    playTestSound, testMic,
+    explain, cleanLabel
   };
 })(window.AideVisio = window.AideVisio || {});

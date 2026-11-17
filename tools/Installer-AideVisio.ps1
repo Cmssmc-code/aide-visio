@@ -40,7 +40,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2
 
 $AppName     = 'Aide Visio'
-$Description = "Aide Visio — oral d'anglais (UE 218)"
+$Description = "Aide Visio — souffleur d’entretien d’embauche"
 $InstallDir  = Join-Path $env:LOCALAPPDATA 'Aide Visio'
 $IconPath    = Join-Path $InstallDir 'aidevisio.ico'
 $DesktopLnk  = Join-Path ([Environment]::GetFolderPath('Desktop')) "$AppName.lnk"

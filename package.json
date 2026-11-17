@@ -1,8 +1,8 @@
 {
   "name": "aidevisio",
-  "version": "2.1.16",
+  "version": "2.2.0",
   "private": true,
-  "description": "Aide Visio — simulateur d'oral blanc d'anglais des affaires UE 218 (PWA, hors-ligne, fichier unique)",
+  "description": "Aide Visio — souffleur d'entretien d'embauche en visio (PWA, fichier unique)",
   "homepage": "https://cmssmc-code.github.io/aide-visio/",
   "license": "UNLICENSED",
   "engines": {
@@ -16,7 +16,7 @@
     "icons": "node tools/icons.mjs",
     "check:pwa": "node tools/check-pwa.mjs",
     "test": "npm run test:unit && npm run test:exam",
-    "test:unit": "node tests/unit-util.mjs && node tests/unit-store.mjs && node tests/unit-ai.mjs && node tests/unit-exam-ai.mjs && node tests/unit-exam-data.mjs && node tests/unit-audio-vad.mjs",
+    "test:unit": "node tests/unit-util.mjs && node tests/unit-store.mjs && node tests/unit-ai.mjs && node tests/unit-exam-ai.mjs && node tests/unit-audio-vad.mjs",
     "test:unit:ai": "node tests/unit-ai.mjs",
     "test:exam": "node tests/e2e-exam.mjs",
     "test:browser": "node tests/docs.test.mjs",

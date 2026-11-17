@@ -71,7 +71,7 @@ def engine_without_devices():
     while not eng.tr.ready():
         time.sleep(0.2)
     threading.Thread(target=eng._loop, daemon=True).start()
-    eng.configure("fr-FR", "Oral d'anglais UE 218", {})
+    eng.configure("fr-FR", "Entretien d’embauche (test)", {})
     return eng, events
 
 
@@ -117,10 +117,10 @@ time.sleep(1.0)
 f = finals(ev)
 them = [m["text"].lower() for m in f if m["who"] == "them"]
 me = [m["text"].lower() for m in f if m["who"] == "me"]
-check("jury : première question transcrite", any("culture" in t for t in them), repr(them))
-check("jury : question après un trou sans données", any("salari" in t or "tention" in t for t in them), repr(them))
+check("recruteur : première question transcrite", any("culture" in t for t in them), repr(them))
+check("recruteur : question après un trou sans données", any("salari" in t or "tention" in t for t in them), repr(them))
 check("écho du haut-parleur dans le micro ignoré", not any("salari" in t or "tention" in t for t in me), repr(me))
-check("étudiant : sa phrase est bien « me »", any("culture" in t for t in me), repr(me))
+check("candidat : sa phrase est bien « me »", any("culture" in t for t in me), repr(me))
 check("texte en direct envoyé pendant la parole", any(m["type"] == "interim" and m["who"] == "them" for _, m in ev))
 first = next((at for at, m in ev if m["type"] == "final" and m["who"] == "them"), None)
 delay = (first - t_end1) if first else 99
@@ -137,9 +137,9 @@ time.sleep(2.0)
 f = finals(ev)
 them = [m["text"].lower() for m in f if m["who"] == "them"]
 me = [m["text"].lower() for m in f if m["who"] == "me"]
-check("jury : question transcrite", any("salari" in t or "tention" in t for t in them), repr(them))
-check("étudiant : réponse gardée après l'écho", any("culture" in t for t in me), repr(me))
-check("étudiant : aucun mot du jury dans sa réponse", not any("salari" in t or "tention" in t for t in me), repr(me))
+check("recruteur : question transcrite", any("salari" in t or "tention" in t for t in them), repr(them))
+check("candidat : réponse gardée après l'écho", any("culture" in t for t in me), repr(me))
+check("candidat : aucun mot du recruteur dans sa réponse", not any("salari" in t or "tention" in t for t in me), repr(me))
 
 print("\nFilet sur le texte : mêmes mots au même moment")
 got = []

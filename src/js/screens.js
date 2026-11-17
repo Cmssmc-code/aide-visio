@@ -9,7 +9,6 @@
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const levelUnit = (x) => { x = Number(x) || 0; return x > 0 ? clamp((20 * Math.log10(x) + 60) / 60, 0, 1) : 0; };
   const plural = (n, one, many) => `${n} ${n > 1 ? many : one}`;
-  const SR = () => window.SpeechRecognition || window.webkitSpeechRecognition || null;
 
   function toast(msg, kind) {
     if (S.ui && S.ui.toast) S.ui.toast(msg, kind || 'info');
@@ -116,8 +115,7 @@
     return Object.assign({
       getUserMedia: !!md2.getUserMedia,
       getDisplayMedia: !!md2.getDisplayMedia,
-      displayAudio: !!md2.getDisplayMedia && /Chrome|Edg\//.test(navigator.userAgent) && !/Android|Mobile/i.test(navigator.userAgent),
-      webSpeech: !!SR()
+      displayAudio: !!md2.getDisplayMedia && /Chrome|Edg\//.test(navigator.userAgent) && !/Android|Mobile/i.test(navigator.userAgent)
     }, sup || {});
   }
 
@@ -170,20 +168,19 @@
     try { const raw = localStorage.getItem(k); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
   }
   const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-  const hasLists = (v) => isObj(v) && (Array.isArray(v.sessions) || Array.isArray(v.customSubjects));
+  const hasLists = (v) => isObj(v) && Array.isArray(v.sessions);
 
   function dataStats() {
-    let chars = 0; let sessions = 0; let subjects = 0;
+    let chars = 0; let sessions = 0;
     lsKeys().forEach((k) => {
       const raw = localStorage.getItem(k) || '';
       chars += k.length + raw.length;
       const v = /^aidevisio\.exam/i.test(k) ? lsJSON(k) : null;
       if (hasLists(v)) {
         sessions += (v.sessions || []).length;
-        subjects += (v.customSubjects || []).length;
       }
     });
-    return { chars, sessions, subjects, pct: Math.min(100, (chars / LS_LIMIT) * 100) };
+    return { chars, sessions, pct: Math.min(100, (chars / LS_LIMIT) * 100) };
   }
 
   function exportData() {
@@ -224,7 +221,7 @@
     if (isObj(file) && file.app === 'aidevisio' && isObj(file.data)) data = file.data;
     else if (hasLists(file)) data = { 'aidevisio.exam.v1': file };
     if (!data) throw new Error('Ce fichier n’est pas une sauvegarde Aide Visio.');
-    let added = 0; let subjects = 0;
+    let added = 0;
     const writes = [];
     Object.keys(data).forEach((k) => {
       if (!/^aidevisio\./i.test(k) || NO_EXPORT.test(k) || /^aidevisio\.(__proto__|constructor|prototype)$/.test(k)) return;
@@ -233,9 +230,8 @@
         const cur = lsJSON(k);
         const base = isObj(cur) ? cur : {};
         const s = mergeById(base.sessions, v.sessions);
-        const cs = mergeById(base.customSubjects, v.customSubjects);
-        added += s.added; subjects += cs.added;
-        writes.push([k, JSON.stringify(Object.assign({}, v, base, { sessions: s.list, customSubjects: cs.list }))]);
+        added += s.added;
+        writes.push([k, JSON.stringify(Object.assign({}, v, base, { sessions: s.list }))]);
       } else if (/^aidevisio\.settings$/i.test(k) && isObj(v)) {
         const cur = lsJSON(k);
         writes.push([k, JSON.stringify(Object.assign({}, v, isObj(cur) ? cur : {}))]);
@@ -250,7 +246,7 @@
       backup.forEach(([k, v]) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (er) {  } });
       throw new Error(/quota/i.test(e.name + e.message) ? 'Plus assez de place : effacez d’anciennes séances puis réessayez.' : 'Écriture impossible dans le navigateur.');
     }
-    return { added, subjects };
+    return { added };
   }
 
   function runSettings(el, c) {
@@ -278,7 +274,7 @@
         ${keyRow({ id: 'gemini', name: 'Google Gemini', icon: 'sparkles', color: 'blue', badge: '<span class="pill pill-ok">Gratuite</span>', url: 'https://aistudio.google.com/apikey', linkLabel: 'Obtenir ma clé gratuite', placeholder: 'Collez votre clé ici (AIza…)', hint: 'Une seule clé suffit pour tout utiliser.' })}`)}
 
       ${section('Micro, son et caméra', `
-        <button type="button" class="list-row st-big" data-act="diag">${tile('mic', 'green')}${main('Vérifier mon PC', 'Micro, haut-parleur, caméra, voix anglaise, clé IA et internet.', 'data-devsum')}${chev()}</button>`)}
+        <button type="button" class="list-row st-big" data-act="diag">${tile('mic', 'green')}${main('Vérifier mon PC', 'Micro, haut-parleur, caméra, clé IA et internet.', 'data-devsum')}${chev()}</button>`)}
 
       ${section('Affichage', `
         <div class="list-row st-wrap">${tile('eye', 'blue')}${main('Thème', null)}${seg('theme', s.theme || 'auto', [['auto', 'Auto'], ['light', 'Clair'], ['dark', 'Sombre']])}</div>
@@ -316,7 +312,6 @@
       const st = dataStats();
       const parts = [
         plural(st.sessions, 'séance', 'séances'),
-        st.subjects ? plural(st.subjects, 'sujet importé', 'sujets importés') : '',
         `${fmtBytes(st.chars)} utilisés (${st.pct < 1 ? 'moins de 1' : Math.round(st.pct)} % de la place)`
       ].filter(Boolean);
       out.textContent = parts.join(' · ');
@@ -340,7 +335,6 @@
       const s2 = settings();
       const bits = [];
       if (s2.micLabel) bits.push(`Micro : ${s2.micLabel}`);
-      try { const v = await D.voice(); if (v && s2.voiceURI) bits.push(`Voix : ${D.niceVoiceName(v).split(' · ')[0]}`); } catch (e) {  }
       if (!c.alive) return;
       if (bits.length) out.textContent = bits.join(' · ');
     }
@@ -380,7 +374,7 @@
     async function wipe() {
       const ok = await S.ui.confirm({
         title: 'Tout effacer sur ce PC ?',
-        text: 'Vos séances, les sujets importés, vos réglages et vos clés seront supprimés définitivement. Pensez à « Exporter mes séances » avant.',
+        text: 'Vos séances, vos réglages et vos clés seront supprimés définitivement. Pensez à « Exporter mes séances » avant.',
         okLabel: 'Tout effacer',
         danger: true
       });
@@ -406,8 +400,8 @@
         let parsed = null;
         try { parsed = JSON.parse(txt); } catch (e) { throw new Error('Fichier illisible : choisissez le fichier .json créé par « Exporter mes séances ».'); }
         const r = importData(parsed);
-        toast(r.added || r.subjects
-          ? `Import réussi : ${plural(r.added, 'séance ajoutée', 'séances ajoutées')}${r.subjects ? `, ${plural(r.subjects, 'sujet', 'sujets')}` : ''}.`
+        toast(r.added
+          ? `Import réussi : ${plural(r.added, 'séance ajoutée', 'séances ajoutées')}.`
           : 'Import terminé : ces séances étaient déjà sur ce PC.', 'ok');
         setTimeout(() => location.reload(), 900);
       } catch (e) {
@@ -526,8 +520,6 @@
     { key: 'mic', icon: 'mic', color: 'green', title: 'Micro', test: 'Tester le micro' },
     { key: 'speaker', icon: 'speaker', color: 'blue', title: 'Haut-parleur', test: 'Écouter un son' },
     { key: 'camera', icon: 'video', color: 'teal', title: 'Caméra', test: 'Voir l’aperçu' },
-    { key: 'speech', icon: 'waveform', color: 'violet', title: 'Reconnaissance vocale (anglais)', test: 'Dire « hello »' },
-    { key: 'voice', icon: 'chat', color: 'orange', title: 'Voix anglaise', test: 'Écouter la voix' },
     { key: 'key', icon: 'key', color: 'blue', title: 'Clé IA', test: 'Tester la clé' },
     { key: 'online', icon: 'globe', color: 'gray', title: 'Connexion internet', test: 'Tester' },
     { key: 'call', icon: 'video', color: 'gray', title: 'Son de l’appel Teams (facultatif)', test: 'Tester (5 s)', optional: true }
@@ -541,7 +533,7 @@
     const rows = DIAG_ROWS.map((r) => Object.assign({ status: 'idle', detail: '', advice: '', actions: null, meter: null, select: null }, r));
     const byKey = Object.fromEntries(rows.map((r) => [r.key, r]));
     const busy = {};
-    const lists = { mic: [], speaker: [], camera: [], voice: [] };
+    const lists = { mic: [], speaker: [], camera: [] };
     const asks = {};
     let running = false;
     let ranOnce = false;
@@ -551,7 +543,7 @@
     body.innerHTML = `
       <div class="card card-pad dg-summary"></div>
       ${section('', rows.map((r) => `<div class="list-row dg-row" data-key="${r.key}"><div class="dg-ic"></div><div class="dg-main sc-grow"><div class="dg-dyn"></div>${r.key === 'camera' ? '<div class="dg-media" hidden><video muted playsinline autoplay></video></div>' : ''}</div></div>`).join(''), 'dg-list')}
-      <p class="small muted dg-foot">${icon('info')} À faire sur le PC de l’oral, quelques minutes avant l’appel. Micro et caméra sont libérés dès la fin de chaque test.</p>`;
+      <p class="small muted dg-foot">${icon('info')} À faire sur le PC de la visio, quelques minutes avant l’entretien. Micro et caméra sont libérés dès la fin de chaque test.</p>`;
 
     // ---------- Dessin ----------
 
@@ -599,11 +591,6 @@
       if (text != null) { const d = node.querySelector('.dg-detail'); if (d) d.textContent = text; }
     }
 
-    function detail(key, text) {
-      const d = body.querySelector(`.dg-row[data-key="${key}"] .dg-detail`);
-      if (d) d.textContent = text;
-    }
-
     function focusRow(key) {
       const node = body.querySelector(`.dg-row[data-key="${key}"]`);
       try { if (node && node.scrollIntoView) node.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {  }
@@ -611,7 +598,7 @@
 
     function browserProblem() {
       if (!window.isSecureContext) return 'Page non sécurisée : ouvrez Aide Visio par son adresse https://.';
-      if (!b.chromium || b.mobile) return `Vous utilisez ${b.name} : pour l’oral, ouvrez Aide Visio dans Google Chrome sur le PC.`;
+      if (!b.chromium || b.mobile) return `Vous utilisez ${b.name} : pour l’entretien, ouvrez Aide Visio dans Google Chrome sur le PC.`;
       if (b.ver && b.ver < 116) return 'Chrome est ancien : mettez-le à jour (menu ⋮ → Aide → À propos de Google Chrome).';
       return '';
     }
@@ -621,14 +608,14 @@
       const n = { ok: 0, warn: 0, err: 0, idle: 0, pending: 0, ask: 0, info: 0 };
       main.forEach((r) => { n[r.status] = (n[r.status] || 0) + 1; });
       const done = n.ok + n.warn + n.err + n.ask + n.info;
-      let cls = 'is-info'; let title = 'Vérifiez votre PC avant l’oral'; let ic = 'shield';
+      let cls = 'is-info'; let title = 'Vérifiez votre PC avant l’entretien'; let ic = 'shield';
       let sub = 'Un clic, environ une minute. Gardez Teams fermé pendant le test de la caméra.';
       if (running || n.pending) { cls = 'is-pending'; title = 'Vérification en cours…'; ic = 'clock'; sub = 'Suivez les consignes affichées sur chaque ligne.'; }
       else if (n.err) { cls = 'is-err'; title = plural(n.err, 'problème à corriger', 'problèmes à corriger'); ic = 'xmark'; sub = 'Lisez la consigne sous la ligne en rouge, puis cliquez sur « Refaire ».'; }
       else if (n.ask) { cls = 'is-warn'; title = 'Une réponse est attendue'; ic = 'info'; sub = 'Dites si vous avez bien entendu le son.'; }
       else if (done && !n.idle) {
         if (n.warn) { cls = 'is-warn'; title = `Prêt, avec ${plural(n.warn, 'point à surveiller', 'points à surveiller')}`; ic = 'warning'; sub = 'Lisez les conseils sous les lignes en orange.'; }
-        else { cls = 'is-ok'; title = 'Tout est prêt pour l’oral'; ic = 'check'; sub = `${plural(n.ok, 'vérification réussie', 'vérifications réussies')}.`; }
+        else { cls = 'is-ok'; title = 'Tout est prêt pour l’entretien'; ic = 'check'; sub = `${plural(n.ok, 'vérification réussie', 'vérifications réussies')}.`; }
       } else if (done && ranOnce) { sub = `${plural(n.ok, 'vérification réussie', 'vérifications réussies')} · ${plural(n.idle, 'reste', 'restent')} à faire.`; }
       const warnB = browserProblem();
       const box = body.querySelector('.dg-summary');
@@ -656,18 +643,6 @@
       };
       mk('mic', 'Micro utilisé');
       mk('camera', 'Caméra utilisée');
-    }
-
-    async function refreshVoices() {
-      if (!D) return;
-      const vs = await D.voices();
-      if (!c.alive) return;
-      lists.voice = vs;
-      if (vs.length > 1) {
-        const cur = await D.voice();
-        byKey.voice.select = { label: 'Voix', options: vs.map((v) => ({ id: v.voiceURI, label: D.niceVoiceName(v) })), value: cur ? cur.voiceURI : '' };
-      } else byKey.voice.select = null;
-      drawRow(byKey.voice);
     }
 
     // ---------- Questions « Avez-vous entendu ? » ----------
@@ -752,7 +727,7 @@
           status: 'err',
           detail: 'Pas de son.',
           select: byKey.speaker.select,
-          advice: `Montez le volume avec les touches du clavier et vérifiez que le son n’est pas coupé. Cliquez sur l’icône du haut-parleur dans la barre des tâches et choisissez la bonne sortie (haut-parleurs du PC ou casque) : la voix du jury sort toujours par la sortie choisie dans Windows.`
+          advice: `Montez le volume avec les touches du clavier et vérifiez que le son n’est pas coupé. Cliquez sur l’icône du haut-parleur dans la barre des tâches et choisissez la bonne sortie (haut-parleurs du PC ou casque) : vous devez bien entendre le recruteur pendant l’entretien.`
         }));
         if (v === 'yes') set('speaker', { status: 'ok', detail: 'Le son sort bien.', select: byKey.speaker.select });
         return v;
@@ -839,75 +814,13 @@
       } finally { busy.camera = false; release(); }
     }
 
-    // Dictée en cours : arrêtée dès qu'on quitte l'écran pour libérer le micro.
-    let speechAc = null;
-    c.add(() => { if (speechAc) speechAc.abort(); });
-    async function testSpeech() {
-      if (busy.speech || !D) return;
-      busy.speech = true;
-      focusRow('speech');
-      try {
-        if (!sup.webSpeech) { const x = D.explainSpeech('unsupported'); set('speech', { status: 'err', detail: x.title, advice: x.advice }); return; }
-        if (navigator.onLine === false) { const x = D.explainSpeech('network'); set('speech', { status: 'err', detail: x.title, advice: x.advice }); return; }
-        set('speech', { status: 'pending', detail: 'Dites « hello » maintenant, en anglais…' });
-        speechAc = typeof AbortController === 'function' ? new AbortController() : null;
-        const r = await D.listenOnce({ lang: 'en-US', timeoutMs: 8000, signal: speechAc ? speechAc.signal : undefined, onText: (t) => detail('speech', `Entendu : « ${t} »…`) });
-        speechAc = null;
-        if (!c.alive) return;
-        const micAdvice = D.chosen('mic') ? 'La reconnaissance vocale de Chrome écoute toujours le micro par défaut de Windows (pas celui choisi plus haut).' : '';
-        if (r.ok) {
-          const good = /\b(hello|hallo|hullo|hi|hey|hello there)\b/i.test(r.text);
-          set('speech', { status: 'ok', detail: `Entendu : « ${r.text} »${good ? '' : ' (essayez « hello » pour comparer)'}.` });
-        } else {
-          const x = D.explainSpeech(r.code);
-          set('speech', { status: r.code === 'no-speech' ? 'warn' : 'err', detail: x.title, advice: [x.advice, micAdvice].filter(Boolean).join(' ') });
-        }
-      } finally { busy.speech = false; }
-    }
-
-    async function testVoice() {
-      if (busy.voice || !D) return null;
-      busy.voice = true;
-      focusRow('voice');
-      try {
-        if (!D.canSpeak()) { set('voice', { status: 'err', detail: 'Lecture à voix haute indisponible.', advice: 'Ouvrez Aide Visio dans Google Chrome à jour.' }); return null; }
-        await refreshVoices();
-        const v = await D.voice();
-        if (!c.alive) return null;
-        if (!v) {
-          set('voice', { status: 'err', detail: 'Aucune voix anglaise sur ce PC.', advice: 'Paramètres Windows → Heure et langue → Voix → « Ajouter des voix » → Anglais (Royaume-Uni). Puis fermez et rouvrez Chrome.' });
-          return null;
-        }
-        if (v.localService === false && navigator.onLine === false) {
-          set('voice', { status: 'warn', detail: 'Cette voix a besoin d’internet.', advice: 'Choisissez une voix « Microsoft » dans la liste : elle marche sans internet.', select: byKey.voice.select });
-          return null;
-        }
-        set('voice', { status: 'pending', detail: `Écoutez : ${D.niceVoiceName(v)}…`, select: byKey.voice.select });
-        let err = '';
-        const ok = await D.speak('Hello! I am your English examiner. Can you hear me clearly?', { voice: v, onEnd: (o2, e) => { err = e || ''; } });
-        if (!c.alive) return null;
-        busy.voice = false;
-        if (!ok) {
-          set('voice', { status: 'err', detail: 'La voix ne s’est pas lancée.', advice: err === 'network' ? 'Cette voix a besoin d’internet : choisissez une voix « Microsoft ».' : 'Choisissez une autre voix dans la liste, puis « Refaire ».', select: byKey.voice.select });
-          return null;
-        }
-        const r = await ask('voice', 'Avez-vous entendu la phrase en anglais ?', () => set('voice', {
-          status: 'err',
-          detail: 'Voix non entendue.',
-          select: byKey.voice.select,
-          advice: 'La voix sort toujours sur la sortie par défaut de Windows : choisissez « Onboard Speaker » dans l’icône du haut-parleur de la barre des tâches et montez le volume. Ou essayez une autre voix.'
-        }));
-        if (r === 'yes') set('voice', { status: 'ok', detail: `Voix prête : ${D.niceVoiceName(v)}.`, select: byKey.voice.select });
-        return r;
-      } finally { busy.voice = false; }
-    }
 
     async function testKey() {
       if (busy.key) return;
       const s = settings();
       const any = ['geminiKey', 'openaiKey', 'claudeKey', 'groqKey'].some((k) => cleanKey(s[k]));
       if (!any) {
-        set('key', { status: 'warn', detail: 'Pas encore de clé.', advice: 'Sans clé, le jury IA ne répond pas (le reste marche). La clé Gemini est gratuite : Réglages → Clé IA.', actions: [{ op: 'settings', label: 'Ajouter ma clé', primary: true }] });
+        set('key', { status: 'warn', detail: 'Pas encore de clé.', advice: 'Sans clé, le souffleur ne propose pas de réponse (le reste marche). La clé Gemini est gratuite : Réglages → Clé IA.', actions: [{ op: 'settings', label: 'Ajouter ma clé', primary: true }] });
         return;
       }
       if (navigator.onLine === false) { set('key', { status: 'warn', detail: 'Clé enregistrée, test impossible sans internet.' }); return; }
@@ -931,7 +844,7 @@
 
     async function testOnline() {
       if (busy.online) return;
-      if (navigator.onLine === false) { set('online', { status: 'err', detail: 'Pas d’internet.', advice: 'Connectez le wifi. Sans internet : pas d’IA ni de reconnaissance vocale (les sujets et les fiches restent disponibles).' }); return; }
+      if (navigator.onLine === false) { set('online', { status: 'err', detail: 'Pas d’internet.', advice: 'Connectez le wifi. Sans internet : pas d’IA ni de transcription en ligne (votre dossier reste disponible).' }); return; }
       busy.online = true;
       set('online', { status: 'pending', detail: 'Test de la connexion…' });
       const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -1015,7 +928,7 @@
     }
     c.add(() => { if (displayCleanup) displayCleanup(); });
 
-    const TESTS = { mic: testMic, speaker: testSpeaker, camera: testCamera, speech: testSpeech, voice: testVoice, key: testKey, online: testOnline, call: testCall };
+    const TESTS = { mic: testMic, speaker: testSpeaker, camera: testCamera, key: testKey, online: testOnline, call: testCall };
 
     async function runAll() {
       if (running) return;
@@ -1027,7 +940,7 @@
       try {
         await testOnline();
         const keyP = testKey();
-        for (const k of ['mic', 'speaker', 'camera', 'speech', 'voice']) {
+        for (const k of ['mic', 'speaker', 'camera']) {
           if (!c.alive) return;
           if (k === 'camera' && camRun) await camRun;
           await TESTS[k]();
@@ -1057,10 +970,7 @@
       const k = t.dataset.pick;
       const opt = t.options[t.selectedIndex];
       const label = opt ? opt.textContent : '';
-      if (k === 'voice') {
-        const v = lists.voice.find((x) => x.voiceURI === t.value);
-        D.choose('voice', t.value, v ? v.name : label);
-      } else D.choose(k, t.value, label);
+      D.choose(k, t.value, label);
       if (byKey[k].select) byKey[k].select.value = t.value;
       if (running) return;
       answer(k, null);
@@ -1075,13 +985,12 @@
     window.addEventListener('online', onNet);
     window.addEventListener('offline', onNet);
     c.add(() => { window.removeEventListener('online', onNet); window.removeEventListener('offline', onNet); });
-    c.add(() => { Object.keys(asks).forEach((k) => answer(k, null)); try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {  } });
+    c.add(() => { Object.keys(asks).forEach((k) => answer(k, null)); });
 
     rows.forEach(drawRow);
     drawSummary();
     if (!D) set('mic', { status: 'err', detail: 'Module des appareils absent.', advice: 'Rechargez la page (Ctrl + Maj + R).' });
     refreshLists();
-    refreshVoices();
     // État connu sans rien ouvrir : permission refusée, pas de clé, hors ligne.
     if (D) {
       D.permission('mic').then((st) => { if (c.alive && st === 'denied' && byKey.mic.status === 'idle') permissionGate('mic', 'mic'); });

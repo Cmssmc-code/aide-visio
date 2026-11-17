@@ -1,9 +1,8 @@
-/* Aide Visio — Entraînement sur Teams : accueil (import du sujet) et assistant en direct.
+/* Aide Visio — souffleur d'entretien : accueil (import du dossier) et réponses en direct.
    Chargé après design.css : seules les classes lv-* et l'écran .ex-call sont visées ici. */
 
 /* ---------- 1. Écran de départ : rejoindre, importer, lancer ---------- */
 
-.lv-start-screen .ex-call-intro { max-width: 62ch; line-height: 1.55; }
 .lv-steps { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; max-width: 760px; }
 .lv-step { display: flex; gap: 14px; align-items: flex-start; }
 .lv-step-n {
@@ -15,8 +14,7 @@
 .lv-step-b .h3 { margin: 4px 0 0; }
 .lv-step-b p { margin: 0; line-height: 1.5; }
 .lv-step-b > .btn { justify-self: start; }
-.lv-step .ex-teams { margin: 0; }
-.lv-jury { margin: 18px 0 0; max-width: 760px; text-align: center; }
+
 @media (max-width: 559px) {
   .lv-step { gap: 12px; }
   .lv-step-b > .btn { justify-self: stretch; justify-content: center; }
@@ -24,15 +22,13 @@
 
 /* ---------- 2. Sous-titres en direct (page, plein écran, fenêtre flottante) ----------
    Toujours sur fond sombre (data-theme="dark" posé sur la scène) pour ressembler à des sous-titres.
-   Hiérarchie : la réponse en anglais (gros, blanc) ; sa traduction juste dessous (plus petite, atténuée) ;
-   la question du jury en haut, plus discrète ; mots-clés compacts en bas. */
+   Hiérarchie : la réponse à dire (grosse, blanche), phrase par phrase ;
+   la question du recruteur en haut, plus discrète ; mots-clés compacts en bas. */
 
 .ex-call .lv-stage { margin: 0 auto 16px; width: 100%; max-width: 1100px; padding: 18px 22px 16px; }
 .lv-stage {
   --lv-en: #ffffff;
-  --lv-fr: #a9b6cf;
   --lv-q: #e4e8f1;
-  --lv-q-fr: #9aa4b8;
   --lv-line: rgba(255, 255, 255, .07);
   display: flex; flex-direction: column; gap: 12px; min-height: 0;
   color: var(--text);
@@ -86,7 +82,7 @@
 .lv-ghost.btn.on { color: #dbeafe; background: rgba(96, 165, 250, .16); box-shadow: inset 0 0 0 1px rgba(96, 165, 250, .3); }
 .lv-ghost.btn[aria-disabled="true"] { cursor: progress; }
 
-/* Bloc « Jury » : question entendue + traduction ; en direct pendant que le jury parle */
+/* Bloc « Recruteur » : question entendue ; en direct pendant que le recruteur parle */
 .lv-stage .lv-q {
   display: flex; align-items: flex-start; gap: 12px; margin: 0; padding: 10px 14px; border-radius: 14px;
   background: rgba(255, 255, 255, .045); box-shadow: inset 0 0 0 1px var(--lv-line);
@@ -98,20 +94,16 @@
 }
 .lv-q-body { display: grid; gap: 2px; min-width: 0; flex: 1; }
 .lv-q-en.ex-live-en { margin: 0; font: 600 17px/1.38 var(--font); color: var(--lv-q); letter-spacing: -.005em; }
-.lv-q-fr { margin: 0; font-size: 15px; line-height: 1.4; color: var(--lv-q-fr); }
-/* La ligne FR garde sa hauteur pendant la traduction : la réponse ne descend pas. */
-.lv-stage:not(.has-interim) .lv-q:not(.lv-q-live) .lv-q-fr[hidden] { display: block; visibility: hidden; min-height: 1.4em; }
-.lv-q-fr .ex-live-fr { margin: 0; font-size: inherit; color: inherit; }
 .lv-interim.ex-live-interim { margin: 0; font: 600 17px/1.38 var(--font); color: var(--lv-en); }
 .lv-interim::after { content: ""; display: inline-block; width: 2px; height: 1em; margin-left: 3px; vertical-align: -.12em; background: #bfdbfe; animation: lv-blink 1s steps(2, start) infinite; }
 .lv-stage:not(.has-interim) .lv-interim, .lv-stage:not(.has-interim) .lv-q-live { display: none; }
-.lv-stage.has-interim .lv-q-en, .lv-stage.has-interim .lv-q-fr { display: none; }
+.lv-stage.has-interim .lv-q-en { display: none; }
 .lv-stage.has-interim .lv-q { box-shadow: inset 0 0 0 1px rgba(96, 165, 250, .38); background: rgba(96, 165, 250, .08); }
 .lv-stage.has-interim .lv-empty { display: none; }
-/* Avant la 1re réponse : la phrase du jury occupe la scène, en grand. */
+/* Avant la 1re réponse : la phrase du recruteur occupe la scène, en grand. */
 .lv-stage.has-interim .lv-q-live { flex: none; align-items: flex-start; padding: 14px 18px; }
 .lv-stage .lv-q-live .lv-interim { font-size: 26px; line-height: 1.3; white-space: normal; }
-/* Pendant que le jury parle, l'ancienne réponse s'efface doucement. */
+/* Pendant que le recruteur parle, l'ancienne réponse s'efface doucement. */
 .lv-a, .lv-foot .lv-kw { transition: opacity .18s var(--ease-out, ease); }
 .lv-stage.has-interim .lv-a, .lv-stage.has-interim .lv-foot .lv-kw { opacity: .3; }
 
@@ -130,18 +122,13 @@
 .lv-ans.is-streaming::after { content: none; }
 .lv-line { display: grid; gap: .16em; margin: 0; }
 .lv-en { text-wrap: pretty; }
-/* 1re phrase en relief : c'est elle que l'élève lit d'abord. */
+/* 1re phrase en relief : c'est elle que le candidat lit d'abord. */
 .lv-ans .lv-line:not(:first-child) .lv-en { font-weight: 560; }
 .lv-ans .lv-line:first-child .lv-en { font-weight: 720; }
-.lv-tr {
-  font: 500 max(15px, .62em)/1.34 var(--font); letter-spacing: 0; color: var(--lv-fr); text-wrap: pretty;
-}
-.lv-tr:empty { display: none; }
 .lv-line.is-new { animation: lv-in .16s var(--ease-out, ease) both; }
 @keyframes lv-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 /* Curseur de frappe à la fin du dernier texte reçu */
-.lv-ans.is-streaming .lv-line:last-child:not(:has(.lv-tr:not(:empty))) .lv-en::after,
-.lv-ans.is-streaming .lv-line:last-child .lv-tr:not(:empty)::after {
+.lv-ans.is-streaming .lv-line:last-child .lv-en::after {
   content: ""; display: inline-block; width: 3px; height: .9em; margin-left: 4px; vertical-align: -.1em;
   border-radius: 2px; background: #93c5fd; animation: lv-blink 1s steps(2, start) infinite;
 }
@@ -172,8 +159,6 @@
   color: var(--lv-en); background: rgba(255, 255, 255, .06); box-shadow: inset 0 0 0 1px var(--lv-line);
 }
 .lv-kw-i b { font-weight: 650; color: var(--lv-en); }
-.lv-kw-fr { font-weight: 500; color: var(--lv-fr); }
-.lv-kw-fr::before { content: "·"; margin: 0 7px; color: rgba(255, 255, 255, .35); }
 
 /* Erreurs et alertes */
 .lv-stage .ex-live-err { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; padding: 10px 12px; border-radius: 12px; background: rgba(248, 113, 113, .14); color: #fecaca; font-weight: 600; line-height: 1.4; text-align: left; }
@@ -195,7 +180,6 @@
 .lv-stage:fullscreen .lv-q { max-width: 980px; background: none; box-shadow: none; justify-content: center; }
 .lv-stage:fullscreen .lv-q-tag { display: none; }
 .lv-stage:fullscreen .lv-q-en { font-size: 21px; }
-.lv-stage:fullscreen .lv-q-fr { font-size: 17px; }
 .lv-stage:fullscreen .lv-interim { font-size: 22px; }
 .lv-stage:fullscreen .lv-foot { justify-content: center; }
 .lv-stage:fullscreen .lv-kw { flex: 0 1 auto; justify-content: center; }
@@ -215,14 +199,12 @@
 .lv-fit .lv-q { padding: 7px 12px; gap: 10px; border-radius: 12px; }
 .lv-fit .lv-q-tag { font-size: 10.5px; padding: 2px 7px; }
 .lv-fit .lv-q-en, .lv-fit .lv-interim { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.lv-fit .lv-q-fr { font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lv-fit .lv-a { flex: 1 1 auto; overflow: hidden; display: flex; flex-direction: column; justify-content: safe center; }
 .lv-fit .lv-ans { text-align: center; justify-items: center; gap: .42em; }
 .lv-fit .lv-foot { gap: 8px; min-height: 30px; }
 .lv-fit .lv-foot .lv-status { flex: none; }
 .lv-fit > .lv-foot:last-child { margin-top: auto; }
-.lv-fit .lv-tr { font-size: max(15px, .64em); }
-.lv-fit .lv-en, .lv-fit .lv-tr, .lv-stage:fullscreen .lv-en, .lv-stage:fullscreen .lv-tr { text-wrap: balance; }
+.lv-fit .lv-en, .lv-stage:fullscreen .lv-en { text-wrap: balance; }
 .lv-fit .lv-kw {
   flex-wrap: nowrap; overflow: hidden; gap: 5px;
   -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
@@ -278,9 +260,7 @@
   .ex-call .lv-stage .lv-wait { font-size: 22px; }
   .ex-call .lv-q { padding: 12px 16px; }
   .ex-call .lv-q-en, .ex-call .lv-interim { font-size: 18.5px; }
-  .ex-call .lv-q-fr { font-size: 16px; }
   .ex-call .lv-kw .pill { font-size: 15px; }
-  .ex-call .lv-stage:not(:fullscreen) .lv-tr { font-size: max(16.5px, .62em); }
   .ex-call .lv-start-t { font-size: 26px; }
   .ex-call .lv-start-p { font-size: 17px; }
   .ex-call .lv-go { min-height: 64px; padding-inline: 36px; font-size: 20px; }
@@ -289,7 +269,7 @@
     padding: 0 4px 12px 0; border-radius: var(--r-lg, 20px);
   }
   .ex-call .lv-side .ex-src { grid-template-columns: minmax(0, 1fr); }
-  .ex-call .lv-side .ex-call-subject .ex-paper { max-height: 340px; overflow-y: auto; }
+  
 }
 @media (max-width: 559px) {
   .ex-call .lv-stage { padding: 14px 14px 12px; margin-bottom: 14px; }
@@ -302,13 +282,13 @@
   /* Question compacte : 2 lignes au plus (elle reste entière dans l'historique). */
   .lv-stage .lv-q:not(.lv-q-live) .lv-q-tag { display: none; }
   .lv-stage:not(.has-interim) .lv-q-en.ex-live-en { font-size: 15.5px; }
-  .lv-stage:not(.has-interim) .lv-q-en, .lv-stage:not(.has-interim) .lv-q-fr { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  .lv-stage:not(.has-interim) .lv-q-en { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .lv-status .ex-live-dot, .lv-status.on .ex-live-dot, .lv-status[data-k] .ex-live-dot { animation: none !important; box-shadow: 0 0 0 3px rgba(255, 255, 255, .14); }
   .lv-line.is-new { animation: none; }
-  .lv-interim::after, .lv-ans.is-streaming .lv-line:last-child .lv-en::after, .lv-ans.is-streaming .lv-line:last-child .lv-tr::after { animation: none !important; }
+  .lv-interim::after, .lv-ans.is-streaming .lv-line:last-child .lv-en::after { animation: none !important; }
   .lv-ans.is-streaming:empty::before, .lv-ans.is-streaming:empty::after { animation: none; }
   .lv-a, .lv-foot, .lv-foot .lv-kw, .lv-status { transition: none; }
   .lv-a.is-scroll { scroll-behavior: auto; }
@@ -316,5 +296,4 @@
 @media (forced-colors: active) {
   .lv-stage { border: 1px solid CanvasText; }
   .lv-status, .lv-stage .ex-live-err, .lv-q, .lv-kw .pill { border: 1px solid CanvasText; }
-  .lv-tr, .lv-q-fr, .lv-kw-fr { color: GrayText; }
 }

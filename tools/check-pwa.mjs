@@ -77,14 +77,13 @@ try {
     let shortcuts = [];
     try { shortcuts = ((await (await fetch('manifest.webmanifest')).json()).shortcuts || []).map((s) => s.url); } catch (e) {  }
     return {
-      modules: ['examFiches', 'examSubjects', 'examAI', 'exam', 'examStore'].filter((k) => !S[k]),
-      subjects: Array.isArray(S.examSubjects) ? S.examSubjects.length : 0,
+      modules: ['examAI', 'exam', 'examStore'].filter((k) => !S[k]),
       tabs, shortcuts
     };
   });
-  check('modules de l’oral chargés', !examState.modules.length, examState.modules.length ? 'manquants : ' + examState.modules.join(', ') : `${examState.subjects} sujets`);
-  check('onglets Accueil / Historique / Fiches / Réglages', examState.tabs.join() === 'home,historique,fiches,settings', examState.tabs.join(', '));
-  check('raccourcis du manifeste : oral blanc et fiches', examState.shortcuts.some((u) => /#\/oral\/new$/.test(u)) && examState.shortcuts.some((u) => /#\/fiches$/.test(u)), examState.shortcuts.join(', '));
+  check('modules du souffleur chargés', !examState.modules.length, examState.modules.length ? 'manquants : ' + examState.modules.join(', ') : 'examAI, exam, examStore');
+  check('onglets Accueil / Historique / Réglages', examState.tabs.join() === 'home,historique,settings', examState.tabs.join(', '));
+  check('raccourci du manifeste : préparer un entretien', examState.shortcuts.some((u) => /#\/entretien\/new$/.test(u)), examState.shortcuts.join(', '));
 
   const swState = await page.evaluate(async () => {
     if (!('serviceWorker' in navigator)) return { error: 'no serviceWorker' };

@@ -13,7 +13,7 @@
     DISPLAY_CANCELLED: "Partage annulé. Choisissez l'onglet de la visio (ou l'écran entier pour Teams) et cochez le partage de l'audio.",
     DISPLAY_UNSUPPORTED: "Ce navigateur ne sait pas capter le son d'un onglet. Utilisez Chrome ou Edge sur PC, ou choisissez « Micro / haut-parleur ».",
     DISPLAY_NEEDS_GESTURE: "Le partage d'onglet doit partir d'un clic : appuyez de nouveau sur le bouton qui lance l'écoute.",
-    DISPLAY_ENDED: "Le partage de l'onglet a été arrêté : la voix du jury n'est plus captée.",
+    DISPLAY_ENDED: "Le partage de l'onglet a été arrêté : la voix du recruteur n'est plus captée.",
     PC_SILENT: "Aucun son de l'appel capté depuis 2 minutes. Vérifiez que Teams ou Meet sort sur les haut-parleurs par défaut de Windows.",
     DISPLAY_SILENT: "Aucun son ne vient de l'onglet partagé depuis une minute. Vérifiez l'onglet choisi et la case de partage de l'audio.",
     MIC_DENIED: "Accès au micro refusé. Cliquez sur le cadenas à gauche de l'adresse, autorisez le micro, puis réessayez.",
@@ -37,9 +37,9 @@
     LOCAL_SPEECH: "Réseau indisponible : reconnaissance vocale passée en mode local.",
     TRANSCRIBE_FAILED: "La transcription IA échoue (réseau ou service). Nouvel essai automatique.",
     SEGMENT_RETRY: "Un passage n'a pas pu être transcrit : nouvel essai dans quelques secondes.",
-    SEGMENT_LOST: "Une phrase du jury n'a pas pu être transcrite (deux essais ratés) : demandez-lui de la répéter.",
+    SEGMENT_LOST: "Une phrase du recruteur n'a pas pu être transcrite (deux essais ratés) : faites-la répéter.",
     QUOTA_WAIT: "Quota de la transcription IA atteint : transcription en attente (reprise dans {s} s, aucun passage perdu).",
-    OFFLINE: "Hors ligne : les passages du jury seront transcrits au retour du réseau.",
+    OFFLINE: "Hors ligne : les paroles du recruteur seront transcrites au retour du réseau.",
     ONLINE: "Réseau rétabli.",
     AUDIO_ENGINE: "Impossible de démarrer le moteur audio de ce navigateur.",
     AUDIO_SUSPENDED: "Son en veille : cliquez n'importe où dans la page pour réactiver l'écoute.",
@@ -959,8 +959,11 @@ registerProcessor('aidevisio-tap', AideVisioTap);
         case 'final': {
           if (!ch || !m.text) break;
           if (ch.interimShown) { ch.interimShown = false; emit('interim', { who: ch.who, text: '' }); }
+          // Même nettoyage des hallucinations de Whisper que pour S.ai.transcribe.
+          const txt = S.ai && typeof S.ai.cleanTranscript === 'function' ? S.ai.cleanTranscript(String(m.text)) : String(m.text);
+          if (!txt) break;
           const t0 = +m.t0 || now(), t1 = +m.t1 || t0;
-          s.final(ch, String(m.text), t0 - s.t0, { source: 'local', durMs: Math.max(0, t1 - t0), latencyMs: +m.ms || 0 });
+          s.final(ch, txt, t0 - s.t0, { source: 'local', durMs: Math.max(0, t1 - t0), latencyMs: +m.ms || 0 });
           break;
         }
         case 'idle':
@@ -1886,7 +1889,7 @@ registerProcessor('aidevisio-tap', AideVisioTap);
     for (const d of Array.from(draining)) d.abortDrain();
     const st = getSettings();
     const s = new Session(cfg, {
-      lang: opts.lang || 'en-GB',
+      lang: opts.lang || 'fr-FR',
       hint: opts.hint || '',
       micDeviceId: opts.micDeviceId || st.micDeviceId || '',
     });

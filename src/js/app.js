@@ -272,7 +272,7 @@
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
       const born = Date.now();
       // Mise à jour trouvée à l'ouverture, sur l'accueil : appliquée seule (rien en cours à perdre).
-      // Plus tard ou ailleurs (oral, appel) : bandeau « Recharger », jamais de rechargement surprise.
+      // Plus tard ou ailleurs (entretien en cours) : bandeau « Recharger », jamais de rechargement surprise.
       const offer = (w) => {
         if (!w || !navigator.serviceWorker.controller) return;
         const home = /^#?\/?$/.test(location.hash || '');
@@ -455,7 +455,7 @@
     </div></div>`;
   }
 
-  const EXAM_ROUTES = ['', 'oral', 'eleve', 'appel', 'sujet'];
+  const EXAM_ROUTES = ['', 'entretien'];
   function tabFor(name) {
     if (EXAM_ROUTES.includes(name)) return 'home';
     if (name === 'diag') return 'settings';

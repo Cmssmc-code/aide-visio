@@ -8,7 +8,7 @@ tout le travail audio sur le PC, avec ses propres composants :
 * découpage en phrases par le détecteur de parole Silero (fourni avec faster-whisper) ;
 * transcription des phrases finies par Groq ou OpenAI si la page fournit une clé, sinon par Whisper local
   (faster-whisper « base », ou le modèle choisi par AIDE_VISIO_MODELE) ; texte en direct toujours local ;
-* attribution certaine : une phrase venue du son du PC est « Jury », une phrase du micro est « Moi » ;
+* attribution certaine : une phrase venue du son du PC est « Recruteur », une phrase du micro est « Moi » ;
   sans casque, une phrase du micro prononcée pendant que le son du PC parle (écho des haut-parleurs) est
   ignorée.
 
@@ -55,7 +55,7 @@ PORT = int(os.environ.get("AIDE_VISIO_SON_PC_PORT", "47800"))
 MODEL_PREF = os.environ.get("AIDE_VISIO_MODELE", "auto").strip().lower()
 ORIGINS = ("https://cmssmc-code.github.io", "http://localhost", "http://127.0.0.1")
 FRAME_MS = 20
-# Whisper libéré après 10 min sans oral ouvert (rechargé en ~5 s à la prochaine connexion de la page).
+# Whisper libéré après 10 min sans entretien ouvert (rechargé en ~5 s à la prochaine connexion de la page).
 UNLOAD_S = 600
 SR = 16000
 VAD_FRAME = 512
@@ -383,12 +383,12 @@ def cloud_transcribe(url, model, key, audio, lang, prompt):
 
 
 class Transcriber:
-    """Fil unique de transcription, file prioritaire : phrases du jury, puis les vôtres, puis le texte en direct.
+    """Fil unique de transcription, file prioritaire : phrases du recruteur, puis les vôtres, puis le texte en direct.
 
     Phrase finie : API en ligne la plus rapide si une clé est fournie (Groq, sinon OpenAI), sinon Whisper local.
     Whisper local « auto » : « base ». Avec AIDE_VISIO_MODELE=small, « base » est aussi chargé et sert pendant
     5 min dès que « small » transcrit en plus de 0,6 × la durée de la phrase.
-    Texte en direct (phrase en cours du jury) : toujours en local, jamais devant une phrase finie.
+    Texte en direct (phrase en cours du recruteur) : toujours en local, jamais devant une phrase finie.
     """
 
     def __init__(self, emit):
@@ -438,7 +438,7 @@ class Transcriber:
         threading.Thread(target=self._load, name="modeles", daemon=True).start()
 
     def unload(self):
-        """Libère Whisper (~1 Go) quand aucun oral n'est ouvert ; ``load`` le recharge en quelques secondes."""
+        """Libère Whisper (~1 Go) quand aucun entretien n'est ouvert ; ``load`` le recharge en quelques secondes."""
         with self.cv:
             if self.loading or not self.models:
                 return
@@ -446,7 +446,7 @@ class Transcriber:
             self.live_model = None
         import gc
         gc.collect()
-        log.info("modèle Whisper libéré (aucun oral depuis %d min)", UNLOAD_S // 60)
+        log.info("modèle Whisper libéré (aucun entretien depuis %d min)", UNLOAD_S // 60)
 
     def _load(self):
         try:
@@ -748,7 +748,7 @@ class Engine:
                                "message": f"Capture {'du son du PC' if kind == 'pc' else 'du micro'} impossible : {e}"})
 
     def close_captures(self):
-        """Libère le micro et la boucle du son du PC (plus aucun oral) : rien n'est écouté hors oral."""
+        """Libère le micro et la boucle du son du PC (plus aucun entretien) : rien n’est écouté hors entretien."""
         with self.caps_lock:
             for c in self.caps.values():
                 c.close()
@@ -757,7 +757,7 @@ class Engine:
                 s.cur, s.run = None, 0
                 s.quiet = s.finalized = False
                 s.vad.reset()
-        log.info("captures fermées (aucun oral en cours)")
+        log.info("captures fermées (aucun entretien en cours)")
 
     def devices(self):
         """Périphériques utilisés (ou qui le seraient), sans ouvrir de capture."""
@@ -1048,7 +1048,7 @@ class Boost:
         try:
             import psutil
         except ImportError:
-            log.warning("mode oral : psutil absent, rien n'est optimisé")
+            log.warning("mode entretien : psutil absent, rien n'est optimisé")
             return
         me = {os.getpid()}
         try:
@@ -1061,7 +1061,7 @@ class Boost:
             try:
                 if (p.info["name"] or "").lower() in close and not self._protected(p, me):
                     p.kill()
-                    log.info("mode oral : fermé %s (pid %d)", p.info["name"], p.pid)
+                    log.info("mode entretien : fermé %s (pid %d)", p.info["name"], p.pid)
             except Exception:
                 pass
         if not cfg.get("ralentir", True):
@@ -1085,7 +1085,7 @@ class Boost:
                         return
                     p.nice(psutil.IDLE_PRIORITY_CLASS)
                     self.lowered[p.pid] = prev
-                log.info("mode oral : priorité minimale pour %s (pid %d)", p.info["name"], p.pid)
+                log.info("mode entretien : priorité minimale pour %s (pid %d)", p.info["name"], p.pid)
             except Exception:
                 pass
 
@@ -1106,7 +1106,7 @@ class Boost:
             except Exception:
                 pass
         if lowered:
-            log.info("mode oral terminé : %d priorité(s) rétablie(s)", len(lowered))
+            log.info("mode entretien terminé : %d priorité(s) rétablie(s)", len(lowered))
         try:
             psutil.Process().nice(psutil.NORMAL_PRIORITY_CLASS)
         except Exception:
@@ -1263,7 +1263,7 @@ async def main():
         print(f"Son du PC Aide Visio : ws://127.0.0.1:{PORT} (journal : {LOG_DIR / 'son-pc.log'})", flush=True)
         # Rien n'est chargé au lancement (programme au repos : ~60 Mo au lieu de ~1,8 Go) : Whisper se charge à
         # la première connexion de la page (sonde de la mise en place, ~5 s, avant « start »), puis est libéré
-        # après UNLOAD_S sans oral. Aucune capture n'est ouverte avant « start ».
+        # après UNLOAD_S sans entretien. Aucune capture n'est ouverte avant « start ».
         await asyncio.Future()
 
 
