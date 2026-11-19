@@ -409,8 +409,9 @@
     if (pref === 'gemini') return ['gemini', 'openai', 'claude', 'groq'];
     if (pref === 'openai') return ['openai', 'gemini', 'claude', 'groq'];
     // Pendant l'appel, la vitesse prime. Mesuré le 10/11/2026 (réponse entière) : Groq 0,5 à 1,2 s,
-    // Gemini lite 1,5 s, OpenAI 1,5 à 6 s. Quota Groq atteint : refus immédiat, le suivant prend le relais.
-    if (purpose === 'live' || purpose === 'fast') return ['groq', 'gemini', 'openai', 'claude'];
+    // Gemini lite 1,5 s, OpenAI 1,5 à 6 s. Remesuré le 19/11/2026 avec un dossier de 28 000 caractères :
+    // Groq 1,3 s, OpenAI 1,9 s, Gemini lite 4,9 s, d'où OpenAI avant Gemini.
+    if (purpose === 'live' || purpose === 'fast') return ['groq', 'openai', 'gemini', 'claude'];
     return ['openai', 'gemini', 'claude', 'groq'];
   }
 
